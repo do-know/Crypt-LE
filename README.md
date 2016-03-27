@@ -6,7 +6,15 @@ This module provides the functionality necessary to use Let's Encrypt API and ge
 
 ### INSTALLATION
 
-To install this module, run the following commands:
+**With CPANminus**
+
+    cpanm Crypt::LE
+    
+**With CPAN**
+
+    cpan -i Crypt::LE
+    
+**Manual installation**:
 
 	perl Makefile.PL
 	make
@@ -16,6 +24,8 @@ To install this module, run the following commands:
 ### CLIENT
 
 With `le.pl` you should be able to quickly get your SSL certificates issued. Run it without parameters to see how it is used. The client supports 'http' and 'dns' challenges out of the box.
+
+> **Important:** By default all your actions are run against the test server, which behaves exactly as the live one, but produces certificates **not** trusted by the browsers. Once you have tested the process and want to get an actual **trusted** certificate, always append **`--live`** parameter to the command line.
 
 *_Usage example:_*
 
@@ -36,6 +46,19 @@ For more examples, logging configuration and all available parameters overview u
     le.pl --help
 
 **Note:** It is advised to also use `--email` parameter for the very first run of the client, to register your account key with the email. While it is optional, that will allow you to receive certificaties expiration notifications and it might be used later to recover access to your account if you lose the key.
+
+### RENEWALS
+
+To RENEW your existing certificate use the same command line as you used for issuing the certificate, with one additional parameter:
+
+       --renew XX, where XX is the number of days left until certificate expiration.
+
+If client detects that it is XX or fewer days left until certificate expiration, then (and only then) the renewal process will be run, so the script can be safely put into crontab to run on a daily basis if needed.
+
+The amount of days left is checked by either of two methods:
+
+ * If the certificate (which name is used with --crt parameter) is available locally, then it will be loaded and checked.
+ * If the certificate is not available locally (for example if you moved it to another server), then an attempt to connect to the domains listed in --domains or CSR will be made until the first successful response is received. The peer certificate will be then checked for expiration.
 
 ### PLUGINS
 
@@ -78,25 +101,13 @@ perldoc command.
 
 You can also look for information at:
 
-    RT, CPAN's request tracker (report bugs here)
-        http://rt.cpan.org/NoAuth/Bugs.html?Dist=Crypt-LE
-
-    AnnoCPAN, Annotated CPAN documentation
-        http://annocpan.org/dist/Crypt-LE
-
-    CPAN Ratings
-        http://cpanratings.perl.org/d/Crypt-LE
-
-    Search CPAN
-        http://search.cpan.org/dist/Crypt-LE/
-
+ * [RT, CPAN's request tracker (report bugs here)](http://rt.cpan.org/NoAuth/Bugs.html?Dist=Crypt-LE)
+ * [AnnoCPAN, Annotated CPAN documentation](http://annocpan.org/dist/Crypt-LE)
+ 
 For feedback or custom development requests see:
 
-    Company homepage
-        https://Do-Know.com
-
-    Project homepage
-        https://ZeroSSL.com
+ * Company homepage - https://do-know.com
+ * Project homepage - https://ZeroSSL.com
 
 ### LICENSE AND COPYRIGHT
 
