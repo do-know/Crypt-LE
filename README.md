@@ -109,6 +109,18 @@ For feedback or custom development requests see:
  * Company homepage - https://do-know.com
  * Project homepage - https://ZeroSSL.com
 
+### NOTES
+
+Crypt::LE has been initially created over weekend, when I noticed that some of my previously bought certificates are about to expire soon enough. The initial goal was to make this work, make it easy to use and possibly remove the need to use openssl command line. It may contain some (hopefully minor) bugs, so feel free to submit a bug report.
+
+If you'd like to contribute a custom plugin, for example to support automatic DNS records creation and removal via API of certain DNS providers (or your registrar), feel free to create a module under Crypt::LE::Challenge:: namespace and either upload it to CPAN or submit a pull request. 
+
+In the former case please specify a dependency from Crypt::LE of at least version 0.11 in your Makefile.
+
+In the latter case please be aware that your module might be uploaded to CPAN later (unless you object) and might be uploaded separately rather than as a part of Crypt::LE (this might happen if you are using dependencies not necessarily required for the rest of Crypt::LE package).
+
+You can also contribute the completion-handling modules under Crypt::LE::Complete:: namespace, for example to scp the domain  key and certificate to another host or to send an email about successful certificate renewal.
+
 ### LICENSE AND COPYRIGHT
 
 Copyright (C) 2016 Alexander Yezhov
