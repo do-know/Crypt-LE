@@ -1,0 +1,77 @@
+Revision history for Crypt-LE
+
+0.12    27 March 2016
+        - Library now supports 'logger' parameter to log debug messages via external logger (otherwise printed to STDOUT).
+        - Client logging is now done via Log::Log4perl and supports --log-config parameter, so you can configure logging
+          to your liking (example of a configuration file is given in help).
+        - Client WILL NOT ask for domain verification now if previous verification results are still valid - that should
+          allow renewals to be done without re-verification for about a year. Note: that makes --verified parameter obsolete.
+        - Client now allows email to be used for registration.
+        - Client is largely rewritten and the new home for the project is referenced (https://ZeroSSL.com)
+        - On domain verification failure the error message is available now to callbacks under the 'error' key of results.
+        - Crypt::LE::Complete::Simple can now use the logger passed to it by the client.
+        - Crypt::LE::Complete::Simple is now also given a list of domains the certificate is issued for.
+        - Crypt::LE::Challenge::Simple can now use the logger passed to it by the client (or other application).
+        - Crypt::LE::Challenge::Simple now has DNS verification example added.
+        - Client now supports basic DNS verification by using the following parameters in a command line:
+
+          --handle-as dns --handle-with Crypt::LE::Challenge::Simple
+
+0.11    21 March 2016
+        - Added an option for conditional renew (--renew XX, where XX is the number of days left until expiration) to le.pl client.
+          Expiration can be checked either locally (by reading an existing certificate file) or remotely (by connecting to the website
+          using that certificate).
+        - Added an option to unlink challenge files automatically (--unlink) to le.client. Note: it only works in combination with 
+          existing --path option, which automatically places the challenge files into the target directory.
+
+0.10    16 March 2016
+        - Minor documentation changes.
+        - Text in Crypt::LE::Challenge::Simple handler brought in line with le.pl.
+
+0.09    15 March 2016
+        - Client (and the library of course) now also supports optional callback for verification,
+          so you can clean up challenge files or react in some way depending on the verification process outcome.
+        - Minor documentation fixes.
+
+0.08    15 March 2016
+        - Added MIME::Base64 version dependency to make it work in a specific NetBSD environment.
+        - Client le.pl will not require 'crt' parameter in generate-only mode any more.
+        - Brushed up documentation.
+
+0.07    14 March 2016
+        - Certificate revocation now handles "already revoked" status better.
+        - Both 'handle-params' and 'complete-params' can now take JSON document with parameters either directly or by reading it from file.
+          So it should be now even easier to create 'handle' and 'complete' plugins and pass parameters to those without changing anything
+          in the client itself.
+
+0.06    14 March 2016
+        - Added certificate revocation to both the library (Crypt::LE) and the client (le.pl).
+        - Improved documentation and le.pl usage help.
+        - Added HTTP::Tiny dependencies for NetBSD/OpenBSD boxes, which don't have IO::Socket::SSL and Net::SSLeay
+          installed by default.
+
+0.05    13 March 2016
+        Client: In addition to be able to use external challenge handlers, le.pl can now also use completion handlers. Example:
+
+        le.pl ... --complete-with Crypt::LE::Complete::Simple --complete-params '{"key1": 1, "key2": 2, "key3": "something"}'
+
+        The module handling process completion should have a 'complete' method defined, to which both the completion data
+        (including the domain and issuer's certificate, certificate file name and key file name) and the parameters given
+        with '--complete-params' will be passed.
+
+0.04    13 March 2016
+        Library: accept_challenge() now takes optional parameters, which can be then passed to a callback.
+        Client: le.pl now supports passing parameters to external challenge handling modules. Example:
+
+        le.pl ... --handle-with Crypt::LE::Challenge::Simple --handle-params '{"key1": 1, "key2": 2, "key3": "something"}'
+
+0.03    13 March 2016
+        Client (le.pl) now supports "handle-with" and "handle-as" parameters, so external 
+        challenge handling modules (such as Crypt::LE::Challenge::Simple) can be easily used.
+
+0.02    12 March 2016
+        Minor documentation fix.
+
+0.01    12 March 2016
+        Initial version.
+
