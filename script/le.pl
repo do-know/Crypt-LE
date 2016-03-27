@@ -8,128 +8,15 @@ use HTTP::Tiny;
 use Net::SSLeay;
 use Time::Piece;
 use Time::Seconds;
-use Pod::Usage;
 use Log::Log4perl;
 use Crypt::LE ':errors';
 
-my $VERSION = '0.12';
+my $VERSION = '0.12a';
 
 use constant PEER_CRT  => 4;
 use constant CRT_DEPTH => 5;
 
 exit main();
-
-=pod
-
-ZeroSSL Crypt::LE client v0.12
-
- =============== 
- USAGE EXAMPLES: 
- ===============
-
-a) To register (if needed) and issue a certificate:
-
-   le.pl --key account.key --email "my@email.address" --csr domain.csr --csr-key domain.key --crt domain.crt --domains "www.domain.ext,domain.ext" \\
-         --generate-missing
-
-   Please note that email is only used for the initial registration and cannot be changed later. Even though it is optional,
-   you may want to have your email registered to receive certificate expiration notifications and be able to recover your
-   account in the future if needed.
-
-b) To have challenge files automatically placed into your web directory before the verification and then removed after the verification:
-
-   le.pl --key account.key --csr domain.csr --csr-key domain.key --crt domain.crt --domains "www.domain.ext,domain.ext" --generate-missing \\
-         --path /some/path/.well-known/acme-challenge --unlink
-
-c) To use external modules to handle challenges and process completion while getting a certificate:
-
-   le.pl --key account.key --csr domain.csr --csr-key domain.key --crt domain.crt --domains "www.domain.ext,domain.ext" --generate-missing \\
-         --handle-with Crypt::LE::Challenge::Simple --complete-with Crypt::LE::Complete::Simple
-
-   - See provided Crypt::LE::Challenge::Simple for an example of a challenge-handling module.
-   - See provided Crypt::LE::Complete::Simple for an example of a completion-handling module.
-
-d) To pass parameters to external modules as JSON either directly or by specifying a file name:
-
-   le.pl --key account.key --csr domain.csr --csr-key domain.key --crt domain.crt --domains "www.domain.ext,domain.ext" --generate-missing \\
-         --handle-with Crypt::LE::Challenge::Simple --complete-with Crypt::LE::Complete::Simple \\
-         --handle-params '{"key1": 1, "key2": 2, "key3": "something"}' --complete-params complete.json
-         
-e) To use basic DNS verification:
-
-   le.pl --key account.key --csr domain.csr --csr-key domain.key --crt domain.crt --domains "www.domain.ext,domain.ext" --generate-missing \\
-         --handle-as dns --handle-with Crypt::LE::Challenge::Simple
-
-f) To just generate the keys and CSR:
-
-   le.pl  --key account.key --csr domain.csr --csr-key domain.key --domains "www.domain.ext,domain.ext" --generate-missing --generate-only
-
-g) To revoke a certificate:
-
-   le.pl --key account.key --crt domain.crt --revoke
-
- ===============
- RENEWAL PROCESS
- ===============
-
-To RENEW your existing certificate: use the same command line as you used for issuing the certificate, with one additional parameter
-   
-   --renew XX, where XX is the number of days left until certificate expiration.
-
-If le.pl detects that it is XX or fewer days left until certificate expiration, then (and only then) the renewal process will be run,
-so the script can be safely put into crontab to run on a daily basis if needed. The amount of days left is checked by either of two
-methods:
-
- 1) If the certificate (which name is used with --crt parameter) is available locally, then it will be loaded and checked.
-
- 2) If the certificate is not available locally (for example if you moved it to another server), then an attempt to
-    connect to the domains listed in --domains or CSR will be made until the first successful response is received. The
-    peer certificate will be then checked for expiration.
-
- NOTE: by default a staging server is used, which does not provide trusted certificates. This is to avoid hitting a 
-       rate limits on Let's Encrypt live server. To generate an actual certificate, always add --live option.
-       
- ==================================
- LOGGING CONFIGURATION FILE EXAMPLE
- ==================================
- 
- log4perl.rootLogger=DEBUG, File, Screen
- log4perl.appender.File = Log::Log4perl::Appender::File
- log4perl.appender.File.filename = le.log
- log4perl.appender.File.mode = append
- log4perl.appender.File.layout = PatternLayout
- log4perl.appender.File.layout.ConversionPattern = %d [%p] %m%n
- log4perl.appender.Screen = Log::Log4perl::Appender::Screen
- log4perl.appender.Screen.layout = PatternLayout
- log4perl.appender.Screen.layout.ConversionPattern = %d [%p] %m%n
-        
- =====================
- AVAILABLE PARAMETERS:
- =====================
-
- key <file>                       - Your account key file.
- csr <file>                       - Your CSR file.
- csr-key <file>                   - Key for your CSR (only mandatory if CSR is missing and to be generated).
- domains <list>                   - Domains as comma-separated list (only mandatory if CSR is missing).
- path <absolute path>             - Path to local .well-known/acme-challenge/ to drop required challenge files into (optional).
- handle-with <Some::Module>       - Module name to handle challenges with (optional).
- handle-as <http|dns|tls|...>     - Type of challenge to request, by default 'http' (optional).
- handle-params <{json}|file>      - JSON (or name of the file containing it) with parameters to be passed to the challenge-handling module (optional).
- complete-with <Another::Module>  - Module name to handle process completion with (optional).
- complete-params <{json}|file>    - JSON (or name of the file containing it) with parameters to be passed to the completion-handling module (optional).
- email <some@mail.address>        - Mail address for the account registration and certificate expiration notifications (optional).
- log-config <file>                - Configuration file for logging (perldoc Log::Log4perl to see configuration examples).
- generate-missing                 - Generate missing files (key, csr and csr-key).
- generate-only                    - Generate a new key and/or CSR if they are missing and then exit.
- unlink                           - Remove challenge files which were automatically created if --path option was used.
- renew <XX>                       - Renew the certificate if XX or fewer days are left until its expiration.
- crt <file>                       - Name for the domain certificate file.
- revoke                           - Revoke a certificate.
- live                             - Connect to a live server instead of staging.
- debug                            - Print out debug messages.
- help                             - This screen.
-
-=cut
 
 sub main {
     Log::Log4perl->easy_init();
@@ -220,15 +107,9 @@ sub work {
     $opt->{'logger'}->info("Make sure to check TOS at " . $le->tos) if ($le->tos_changed and $le->tos);
     $le->accept_tos();
     # We might not need to re-verify, verification holds for quite a few months.
-    if (my $rv = $le->request_certificate()) {
-        unless ($rv == AUTH_ERROR) {
-            return "Error requesting domain certificate - " . $le->error_details;
-        }
-    } else {
+    unless ($le->request_certificate()) {
         $opt->{'logger'}->info("Requesting domain certificate does not require verification (previous verification is still valid).");
-        $opt->{verified} = 1;
-    }
-    unless ($opt->{verified}) {
+    } else {
         return $le->error_details if $le->request_challenge();
         return $le->error_details if $le->accept_challenge($opt->{'handler'} || \&process_challenge, $opt->{'handle-params'}, $opt->{'handle-as'});
         return $le->error_details if $le->verify_challenge($opt->{'handler'} || \&process_verification, $opt->{'handle-params'}, $opt->{'handle-as'});
@@ -271,9 +152,9 @@ sub parse_options {
     
     GetOptions ($opt, 'key=s', 'csr=s', 'csr-key=s', 'domains=s', 'path=s', 'crt=s', 'email=s', 'renew=i',
             'handle-with=s', 'handle-as=s', 'handle-params=s', 'complete-with=s', 'complete-params=s', 'log-config=s',
-            'generate-missing', 'generate-only', 'revoke', 'unlink', 'verified', 'live', 'debug', 'help') || return "Use --help to see the usage examples.\n";
+            'generate-missing', 'generate-only', 'revoke', 'unlink', 'live', 'debug', 'help') || return "Use --help to see the usage examples.\n";
             
-    pod2usage(1) unless ($args and !$opt->{'help'});
+    usage_and_exit() unless ($args and !$opt->{'help'});
     my $rv = reconfigure_log($opt);
     return $rv if $rv;
 
@@ -333,19 +214,19 @@ sub parse_options {
     return;
 }
 
+sub usage_and_exit {
+    local $/;
+    print <DATA>;
+    exit(1);
+}
+
 sub reconfigure_log {
     my $opt = shift;
     if ($opt->{'log-config'}) {
-        my $log_failed = 0;
         eval {
-            $a=Log::Log4perl::init($opt->{'log-config'});
+            Log::Log4perl::init($opt->{'log-config'});
         };
-        if ($@) {
-            $log_failed = 1;
-        } else {
-            $log_failed = 1 unless %{Log::Log4perl::appenders()};
-        }
-        if ($log_failed) {
+        if ($@ or !%{Log::Log4perl::appenders()}) {
             Log::Log4perl->easy_init();
             return "Could not init logging with '$opt->{'log-config'}' file";
         }
@@ -458,3 +339,114 @@ sub process_verification {
     }
     1;
 }
+
+__END__
+
+ ZeroSSL Crypt::LE client v0.12
+
+ ===============
+ USAGE EXAMPLES: 
+ ===============
+
+a) To register (if needed) and issue a certificate:
+
+   le.pl --key account.key --email "my@email.address" --csr domain.csr --csr-key domain.key --crt domain.crt --domains "www.domain.ext,domain.ext" \\
+         --generate-missing
+
+   Please note that email is only used for the initial registration and cannot be changed later. Even though it is optional,
+   you may want to have your email registered to receive certificate expiration notifications and be able to recover your
+   account in the future if needed.
+
+b) To have challenge files automatically placed into your web directory before the verification and then removed after the verification:
+
+   le.pl --key account.key --csr domain.csr --csr-key domain.key --crt domain.crt --domains "www.domain.ext,domain.ext" --generate-missing \\
+         --path /some/path/.well-known/acme-challenge --unlink
+
+c) To use external modules to handle challenges and process completion while getting a certificate:
+
+   le.pl --key account.key --csr domain.csr --csr-key domain.key --crt domain.crt --domains "www.domain.ext,domain.ext" --generate-missing \\
+         --handle-with Crypt::LE::Challenge::Simple --complete-with Crypt::LE::Complete::Simple
+
+   - See provided Crypt::LE::Challenge::Simple for an example of a challenge-handling module.
+   - See provided Crypt::LE::Complete::Simple for an example of a completion-handling module.
+
+d) To pass parameters to external modules as JSON either directly or by specifying a file name:
+
+   le.pl --key account.key --csr domain.csr --csr-key domain.key --crt domain.crt --domains "www.domain.ext,domain.ext" --generate-missing \\
+         --handle-with Crypt::LE::Challenge::Simple --complete-with Crypt::LE::Complete::Simple \\
+         --handle-params '{"key1": 1, "key2": 2, "key3": "something"}' --complete-params complete.json
+         
+e) To use basic DNS verification:
+
+   le.pl --key account.key --csr domain.csr --csr-key domain.key --crt domain.crt --domains "www.domain.ext,domain.ext" --generate-missing \\
+         --handle-as dns --handle-with Crypt::LE::Challenge::Simple
+
+f) To just generate the keys and CSR:
+
+   le.pl  --key account.key --csr domain.csr --csr-key domain.key --domains "www.domain.ext,domain.ext" --generate-missing --generate-only
+
+g) To revoke a certificate:
+
+   le.pl --key account.key --crt domain.crt --revoke
+
+ ===============
+ RENEWAL PROCESS
+ ===============
+
+To RENEW your existing certificate: use the same command line as you used for issuing the certificate, with one additional parameter
+   
+   --renew XX, where XX is the number of days left until certificate expiration.
+
+If le.pl detects that it is XX or fewer days left until certificate expiration, then (and only then) the renewal process will be run,
+so the script can be safely put into crontab to run on a daily basis if needed. The amount of days left is checked by either of two
+methods:
+
+ 1) If the certificate (which name is used with --crt parameter) is available locally, then it will be loaded and checked.
+
+ 2) If the certificate is not available locally (for example if you moved it to another server), then an attempt to
+    connect to the domains listed in --domains or CSR will be made until the first successful response is received. The
+    peer certificate will be then checked for expiration.
+
+ NOTE: by default a staging server is used, which does not provide trusted certificates. This is to avoid hitting a 
+       rate limits on Let's Encrypt live server. To generate an actual certificate, always add --live option.
+       
+ ==================================
+ LOGGING CONFIGURATION FILE EXAMPLE
+ ==================================
+ 
+ log4perl.rootLogger=DEBUG, File, Screen
+ log4perl.appender.File = Log::Log4perl::Appender::File
+ log4perl.appender.File.filename = le.log
+ log4perl.appender.File.mode = append
+ log4perl.appender.File.layout = PatternLayout
+ log4perl.appender.File.layout.ConversionPattern = %d [%p] %m%n
+ log4perl.appender.Screen = Log::Log4perl::Appender::Screen
+ log4perl.appender.Screen.layout = PatternLayout
+ log4perl.appender.Screen.layout.ConversionPattern = %d [%p] %m%n
+        
+ =====================
+ AVAILABLE PARAMETERS:
+ =====================
+
+ key <file>                       - Your account key file.
+ csr <file>                       - Your CSR file.
+ csr-key <file>                   - Key for your CSR (only mandatory if CSR is missing and to be generated).
+ domains <list>                   - Domains as comma-separated list (only mandatory if CSR is missing).
+ path <absolute path>             - Path to local .well-known/acme-challenge/ to drop required challenge files into (optional).
+ handle-with <Some::Module>       - Module name to handle challenges with (optional).
+ handle-as <http|dns|tls|...>     - Type of challenge to request, by default 'http' (optional).
+ handle-params <{json}|file>      - JSON (or name of the file containing it) with parameters to be passed to the challenge-handling module (optional).
+ complete-with <Another::Module>  - Module name to handle process completion with (optional).
+ complete-params <{json}|file>    - JSON (or name of the file containing it) with parameters to be passed to the completion-handling module (optional).
+ email <some@mail.address>        - Mail address for the account registration and certificate expiration notifications (optional).
+ log-config <file>                - Configuration file for logging (perldoc Log::Log4perl to see configuration examples).
+ generate-missing                 - Generate missing files (key, csr and csr-key).
+ generate-only                    - Generate a new key and/or CSR if they are missing and then exit.
+ unlink                           - Remove challenge files which were automatically created if --path option was used.
+ renew <XX>                       - Renew the certificate if XX or fewer days are left until its expiration.
+ crt <file>                       - Name for the domain certificate file.
+ revoke                           - Revoke a certificate.
+ live                             - Connect to a live server instead of staging.
+ debug                            - Print out debug messages.
+ help                             - This screen.
+
