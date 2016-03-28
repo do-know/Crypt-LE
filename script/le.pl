@@ -9,9 +9,10 @@ use Net::SSLeay;
 use Time::Piece;
 use Time::Seconds;
 use Log::Log4perl;
+use Module::Load;
 use Crypt::LE ':errors';
 
-my $VERSION = '0.13';
+my $VERSION = '0.14';
 
 use constant PEER_CRT  => 4;
 use constant CRT_DEPTH => 5;
@@ -21,7 +22,7 @@ exit main();
 sub main {
     Log::Log4perl->easy_init();
     my $opt = { logger => Log::Log4perl->get_logger() };
-    binmode(STDOUT, ":utf8");
+    binmode(STDOUT, ":encoding(UTF-8)");
     if (my $rv = work($opt)) {
         $opt->{logger}->error($rv);
         return 255;
@@ -108,17 +109,17 @@ sub work {
     $le->accept_tos();
     # We might not need to re-verify, verification holds for quite a few months.
     unless ($le->request_certificate()) {
-        $opt->{'logger'}->info("Requesting domain certificate does not require verification (previous verification is still valid).");
+        $opt->{'logger'}->info("Received domain certificate, no validation required at this time.");
     } else {
         return $le->error_details if $le->request_challenge();
         return $le->error_details if $le->accept_challenge($opt->{'handler'} || \&process_challenge, $opt->{'handle-params'}, $opt->{'handle-as'});
         return $le->error_details if $le->verify_challenge($opt->{'handler'} || \&process_verification, $opt->{'handle-params'}, $opt->{'handle-as'});
     }
     unless ($le->certificate) {
-        $opt->{'logger'}->info("Requesting domain certificate");
+        $opt->{'logger'}->info("Requesting domain certificate.");
         return $le->error_details if $le->request_certificate();
     }
-    $opt->{'logger'}->info("Requesting issuer's certificate");
+    $opt->{'logger'}->info("Requesting issuer's certificate.");
     if ($le->request_issuer_certificate()) {
         $opt->{'logger'}->error("Could not download an issuer's certificate, try to download manually from " . $le->issuer_url);
         $opt->{'logger'}->warn("Will be saving the domain certificate alone, not the full chain.");
@@ -189,9 +190,11 @@ sub parse_options {
         $opt->{'handle-as'} = $opt->{'handle-as'} ? lc($opt->{'handle-as'}) : 'http';
 
         if ($opt->{'handle-with'}) {
-            eval "use $opt->{'handle-with'};";
+            eval {
+                load $opt->{'handle-with'};
+                $opt->{'handler'} = $opt->{'handle-with'}->new();
+            };
             return "Cannot use the module to handle challenges with." if $@;
-            $opt->{'handler'} = $opt->{'handle-with'}->new();
             my $method = 'handle_challenge_' . $opt->{'handle-as'};
             return "Module to handle challenges does not seem to support the challenge type of $opt->{'handle-as'}." unless $opt->{'handler'}->can($method);
             my $rv = _load_params($opt, 'handle-params');
@@ -201,9 +204,11 @@ sub parse_options {
         }
 
         if ($opt->{'complete-with'}) {
-            eval "use $opt->{'complete-with'};";
+            eval {
+                load $opt->{'complete-with'};
+                $opt->{'complete-handler'} = $opt->{'complete-with'}->new();
+            };
             return "Cannot use the module to complete processing with." if $@;
-            $opt->{'complete-handler'} = $opt->{'complete-with'}->new();
             return "Module to complete processing with does not seem to support the required 'complete' method." unless $opt->{'complete-handler'}->can('complete');
             my $rv = _load_params($opt, 'complete-params');
             return $rv if $rv;
@@ -237,7 +242,7 @@ sub reconfigure_log {
 
 sub _load_params {
     my ($opt, $type) = @_;
-    return undef unless ($opt and $opt->{$type});
+    return unless ($opt and $opt->{$type});
     if ($opt->{$type}!~/[\{\[\}\]]/) {
         $opt->{$type} = _read($opt->{$type});
         return "Could not read the file with '$type'." unless $opt->{$type};
@@ -342,7 +347,7 @@ sub process_verification {
 
 __END__
 
- ZeroSSL Crypt::LE client v0.13
+ ZeroSSL Crypt::LE client v0.14
 
  ===============
  USAGE EXAMPLES: 

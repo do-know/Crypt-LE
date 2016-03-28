@@ -4,7 +4,7 @@ use 5.006;
 use strict;
 use warnings;
 
-our $VERSION = '0.13';
+our $VERSION = '0.14';
 
 =head1 NAME
 
@@ -1095,7 +1095,7 @@ sub _jwk {
 sub _jws {
     my $self = shift;
     my ($obj) = @_;
-    return undef unless ($obj and ref $obj);
+    return unless ($obj and ref $obj);
     my $json = encode_base64url($j->encode($obj));
     my $header = encode_base64url('{"nonce":"' . $self->{nonce} . '"}');
     my $sig = encode_base64url($self->{key}->sign("$header.$json"));
@@ -1106,7 +1106,7 @@ sub _jws {
 sub _links {
     my $self = shift;
     my ($links) = @_;
-    return undef unless $links;
+    return unless $links;
     my $rv;
     foreach my $link ((ref $links eq 'ARRAY') ? @{$links} : ($links)) {
         next unless ($link and $link=~/^<([^>]+)>;rel="([^"]+)"$/i);
