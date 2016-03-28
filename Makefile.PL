@@ -2,27 +2,27 @@
 use ExtUtils::MakeMaker;
 WriteMakefile
 (
-  'NAME' => 'Crypt::LE',
-  'PL_FILES' => {},
-  'INSTALLDIRS' => 'site',
   'VERSION_FROM' => 'lib/Crypt/LE.pm',
+  'NAME' => 'Crypt::LE',
+  'INSTALLDIRS' => 'site',
+  'PREREQ_PM' => {
+                   'Crypt::OpenSSL::RSA' => '0.28',
+                   'Crypt::OpenSSL::PKCS10' => '0.15',
+                   'Crypt::OpenSSL::Bignum' => '0.06',
+                   'HTTP::Tiny' => '0.042',
+                   'Log::Log4perl' => '1.27',
+                   'Net::SSLeay' => '1.49',
+                   'Test::More' => 0,
+                   'JSON::MaybeXS' => '1.003005',
+                   'IO::Socket::SSL' => '1.42',
+                   'Crypt::PKCS10' => '1.5',
+                   'Crypt::Format' => '0.02',
+                   'Time::Piece' => '1.27',
+                   'MIME::Base64' => '3.11'
+                 },
   'EXE_FILES' => [
                    'script/le.pl'
                  ],
-  'PREREQ_PM' => {
-                   'Crypt::OpenSSL::RSA' => '0.28',
-                   'MIME::Base64' => '3.11',
-                   'Crypt::OpenSSL::Bignum' => '0.06',
-                   'JSON::MaybeXS' => '1.003005',
-                   'Crypt::OpenSSL::PKCS10' => '0.15',
-                   'Test::More' => 0,
-                   'IO::Socket::SSL' => '1.42',
-                   'HTTP::Tiny' => '0.042',
-                   'Crypt::Format' => '0.02',
-                   'Crypt::PKCS10' => '1.5',
-                   'Time::Piece' => '1.27',
-                   'Log::Log4perl' => '1.27',
-                   'Net::SSLeay' => '1.49'
-                 }
+  'PL_FILES' => {}
 )
 ;

@@ -11,7 +11,7 @@ use Time::Seconds;
 use Log::Log4perl;
 use Crypt::LE ':errors';
 
-my $VERSION = '0.12a';
+my $VERSION = '0.13';
 
 use constant PEER_CRT  => 4;
 use constant CRT_DEPTH => 5;
@@ -342,7 +342,7 @@ sub process_verification {
 
 __END__
 
- ZeroSSL Crypt::LE client v0.12
+ ZeroSSL Crypt::LE client v0.13
 
  ===============
  USAGE EXAMPLES: 

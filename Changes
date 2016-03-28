@@ -1,5 +1,10 @@
 Revision history for Crypt-LE
 
+0.13    28 March 2016
+        - Simplified a few blocks of code in the client.
+        - Moved pod in the client out of the way.
+        - Added Markdown version of README.
+
 0.12    27 March 2016
         - Library now supports 'logger' parameter to log debug messages via external logger (otherwise printed to STDOUT).
         - Client logging is now done via Log::Log4perl and supports --log-config parameter, so you can configure logging
