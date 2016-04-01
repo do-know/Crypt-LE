@@ -4,7 +4,7 @@ use 5.006;
 use strict;
 use warnings;
 
-our $VERSION = '0.14';
+our $VERSION = '0.15';
 
 =head1 NAME
 
@@ -12,7 +12,7 @@ Crypt::LE - Let's Encrypt API interfacing module.
 
 =head1 VERSION
 
-Version 0.12
+Version 0.15
 
 =head1 SYNOPSIS
 
@@ -163,6 +163,7 @@ our %EXPORT_TAGS = ( errors => [ @EXPORT_OK ] );
 
 my $header = 'replay-nonce';
 my $j = JSON->new->canonical()->allow_nonref();
+my $url_safe = qr/^[-_A-Za-z0-9]+$/; # RFC 4648 section 5.
 
 # https://github.com/letsencrypt/boulder/blob/master/core/good_key.go
 my @primes = map { Crypt::OpenSSL::Bignum->new_from_decimal($_) } (
@@ -361,7 +362,9 @@ sub generate_csr {
     $self->_reset_csr;
     my @list = map {lc $_} (ref $domains eq 'ARRAY') ? @{$domains} : $domains ? split /\s*,\s*/, $domains : ();
     return $self->_status(INVALID_DATA, "No domains provided.") unless @list;
-    my $rsa = Crypt::OpenSSL::RSA->generate_key($keysize);
+    my $rsa = $self->csr_key() ? Crypt::OpenSSL::RSA->new_private_key($self->csr_key()) : Crypt::OpenSSL::RSA->generate_key($keysize);
+    $rsa->use_pkcs1_padding;
+    $rsa->use_sha256_hash;
     my $csr = Crypt::OpenSSL::PKCS10->new_from_rsa($rsa);
     $csr->set_subject("/CN=$list[0]");
     if (@list > 1) {
@@ -384,9 +387,32 @@ sub csr {
     return shift->{csr};
 }
 
+=head2 load_csr_key($filename)
+
+Loads the CSR key from file (to be used for generating a new CSR).
+
+Returns: OK | READ_ERROR | LOAD_ERROR.
+
+=cut
+
+sub load_csr_key {
+    my $self = shift;
+    my $file = shift;
+    undef $self->{csr_key};
+    my $key = $self->_file($file);
+    return $self->_status(READ_ERROR, "CSR key reading error.") unless $key;
+    eval {
+        $key = $self->_convert($key, 'RSA PRIVATE KEY');
+        Crypt::OpenSSL::RSA->new_private_key($key);
+    };
+    return $self->_status(LOAD_ERROR, "CSR key loading error.") if $@;
+    $self->{csr_key} = $key;
+    return $self->_status(OK, "CSR key loaded");
+}
+
 =head2 csr_key()
 
-Returns: A private key of a previously generated CSR in PEM format or undef.
+Returns: A CSR key (either loaded or generated with CSR) or undef.
 
 =cut
 
@@ -458,7 +484,7 @@ sub _is_divisible {
 
 sub _reset_csr {
     my $self = shift;
-    undef $self->{$_} for qw<domains csr csr_key>;
+    undef $self->{$_} for qw<domains csr>;
 }
 
 sub _set_csr {
@@ -579,13 +605,24 @@ sub request_challenge {
         $domains_requested++;
         if ($status == CREATED) {
             foreach my $challenge (@{$content->{challenges}}) {
-                next unless ($challenge and (ref $challenge eq 'HASH') and $challenge->{type} and $challenge->{uri} and $challenge->{status});
-                my $type = delete $challenge->{type};
-                $type = (split '-', $type)[0];
+                unless ($challenge and (ref $challenge eq 'HASH') and $challenge->{type} and $challenge->{uri} and $challenge->{status}) {
+                    $self->_debug("Challenge for domain $domain does not contain required fields.");
+                    next;
+                }
+                my $type = (split '-', delete $challenge->{type})[0];
+                unless ($challenge->{token} and $challenge->{token}=~$url_safe) {
+                    $self->_debug("Challenge ($type) for domain $domain is missing a valid token.");
+                    next;
+                }
                 $self->{challenges}->{$domain}->{$type} = $challenge;
             }
-            $self->_debug("Received challenges for $domain.");
-            $self->{domains}->{$domain} = 0;
+            if ($self->{challenges} and exists $self->{challenges}->{$domain}) {
+                $self->_debug("Received challenges for $domain.");
+                $self->{domains}->{$domain} = 0;
+            } else {
+                $self->_debug("Received no valid challenges for $domain.");
+                push @domains_failed, $domain;
+            }
         } else {
             $self->_debug("Failed to receive challenges for $domain.");
             push @domains_failed, $domain;

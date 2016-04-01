@@ -1,5 +1,13 @@
 Revision history for Crypt-LE
 
+0.15    01 April 2016
+        - While generating a new CSR you can now use your existing key (if the file named in csr-key exists). Previously 
+          generating a CSR would have also created a new key with it.
+        - Even though tokens from LE should be technically safe (base64url), in case something gets changed by accident or 
+          gets broken, they will be checked for matching the expected alphabet as per RFC 4648 section 5 (you don't want 
+          something like / to sneak in).
+        - Version typo fix.
+
 0.14    28 March 2016
         - LICENSE file has been added.
         - Minimum Perl version is now explicitly specified.

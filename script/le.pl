@@ -12,7 +12,7 @@ use Log::Log4perl;
 use Module::Load;
 use Crypt::LE ':errors';
 
-my $VERSION = '0.14';
+my $VERSION = '0.15';
 
 use constant PEER_CRT  => 4;
 use constant CRT_DEPTH => 5;
@@ -64,11 +64,20 @@ sub work {
         $le->load_csr($opt->{'csr'}, $opt->{'domains'}) == OK or return "Could not load a CSR: " . $le->error_details;
     } else {
         $opt->{'logger'}->info("Generating a new CSR for domains $opt->{'domains'}");
+        if (-e $opt->{'csr-key'}) {
+             # Allow using pre-existing key when generating CSR
+             return "Could not load existing CSR key from $opt->{'csr-key'}" if $le->load_csr_key($opt->{'csr-key'});
+             $opt->{'logger'}->info("New CSR will be based on '$opt->{'csr-key'}' key");
+        } else {
+             $opt->{'logger'}->info("New CSR will be based on a generated key");
+        }
         $le->generate_csr($opt->{'domains'}) == OK or return "Could not generate a CSR: " . $le->error_details;
         $opt->{'logger'}->info("Saving a new CSR into $opt->{'csr'}");
         return "Failed to save a CSR" if _write($opt->{'csr'}, $le->csr);
-        $opt->{'logger'}->info("Saving a new CSR key into $opt->{'csr-key'}");
-        return "Failed to save a CSR key" if _write($opt->{'csr-key'}, $le->csr_key);
+        unless (-e $opt->{'csr-key'}) {
+            $opt->{'logger'}->info("Saving a new CSR key into $opt->{'csr-key'}");
+            return "Failed to save a CSR key" if _write($opt->{'csr-key'}, $le->csr_key);
+        }
     }
 
     return if $opt->{'generate-only'};
@@ -308,6 +317,10 @@ sub process_challenge {
     my $text = "$challenge->{token}.$challenge->{fingerprint}";
     if ($params->{'path'}) {
         my $file = "$params->{'path'}/$challenge->{token}";
+        if (-e $file) {
+           $params->{'logger'}->error("File already exists - this should not be the case, please move it or remove it.");
+           return 0;
+        }
 	if (_write($file, $text)) {
 	   $params->{'logger'}->error("Failed to save a challenge file '$file' for domain '$challenge->{domain}'");
            return 0;
@@ -347,7 +360,7 @@ sub process_verification {
 
 __END__
 
- ZeroSSL Crypt::LE client v0.14
+ ZeroSSL Crypt::LE client v0.15
 
  ===============
  USAGE EXAMPLES: 
