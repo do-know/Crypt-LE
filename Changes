@@ -1,5 +1,8 @@
 Revision history for Crypt-LE
 
+0.16    14 May 2016
+        - Configuration changes to allow building PPM for pure Win23/Win64 environments.
+
 0.15    01 April 2016
         - While generating a new CSR you can now use your existing key (if the file named in csr-key exists). Previously 
           generating a CSR would have also created a new key with it.

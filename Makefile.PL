@@ -7,7 +7,17 @@ WriteMakefile
   'EXE_FILES' => [
                    'script/le.pl'
                  ],
-  'PREREQ_PM' => {
+  'PREREQ_PM' => $base_build,
+  'CONFIGURE' => \&conf,
+  'INSTALLDIRS' => 'site',
+  'PL_FILES' => {},
+  'PREREQ_PM' => {},
+  'VERSION_FROM' => 'lib/Crypt/LE.pm'
+)
+;
+
+sub conf {
+    my $base_build = {
                    'Net::SSLeay' => '1.49',
                    'Test::More' => 0,
                    'IO::Socket::SSL' => '1.42',
@@ -22,9 +32,8 @@ WriteMakefile
                    'Crypt::PKCS10' => '1.5',
                    'JSON::MaybeXS' => '1.003005',
                    'Crypt::Format' => '0.02'
-                 },
-  'INSTALLDIRS' => 'site',
-  'PL_FILES' => {},
-  'VERSION_FROM' => 'lib/Crypt/LE.pm'
-)
-;
+                 };
+    delete $base_build->{'Crypt::OpenSSL::PKCS10'} if $^O=~/^MSWin/;
+    return { 'PREREQ_PM' => $base_build };
+}
+

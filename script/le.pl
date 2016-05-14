@@ -12,7 +12,7 @@ use Log::Log4perl;
 use Module::Load;
 use Crypt::LE ':errors';
 
-my $VERSION = '0.15';
+my $VERSION = '0.16';
 
 use constant PEER_CRT  => 4;
 use constant CRT_DEPTH => 5;
@@ -360,7 +360,7 @@ sub process_verification {
 
 __END__
 
- ZeroSSL Crypt::LE client v0.15
+ ZeroSSL Crypt::LE client v0.16
 
  ===============
  USAGE EXAMPLES: 

@@ -41,18 +41,26 @@ $fh = File::Temp->new(SUFFIX => '.le', UNLINK => 1, EXLOCK => 0);
 
 ok($le->load_csr($fh->filename) == READ_ERROR, 'loading non-existent CSR');
 
-ok($le->generate_csr() == INVALID_DATA, 'generating CSR without providing domain names');
+SKIP: {
 
-ok($le->generate_csr('odd.domain') == OK, 'generating CSR for one domain');
+    eval { require Crypt::OpenSSL::PKCS10 };
 
-ok($le->generate_csr('odd.domain,another.domain,yet.another.domain') == OK, 'generating CSR for multiple domains');
+    skip "Crypt::OpenSSL:PKCS10 is not installed, skipping CSR generation tests.", 6 if $@;
 
-ok($le->csr, 'retrieving generated CSR');
+    ok($le->generate_csr() == INVALID_DATA, 'generating CSR without providing domain names');
 
-ok($le->csr_key(), 'retrieving the key used for CSR');
+    ok($le->generate_csr('odd.domain') == OK, 'generating CSR for one domain');
 
-print $fh $le->csr;
-$fh->flush;
-ok($le->load_csr($fh->filename) == OK, 'reloading CSR');
+    ok($le->generate_csr('odd.domain,another.domain,yet.another.domain') == OK, 'generating CSR for multiple domains');
+
+    ok($le->csr, 'retrieving generated CSR');
+
+    ok($le->csr_key(), 'retrieving the key used for CSR');
+
+    print $fh $le->csr;
+    $fh->flush;
+    ok($le->load_csr($fh->filename) == OK, 'reloading CSR');
+
+}
 
 diag( "Testing Crypt::LE $Crypt::LE::VERSION, Setup methods, $^X" );
