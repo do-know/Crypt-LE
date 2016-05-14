@@ -6,7 +6,7 @@ use Test::More;
 use File::Temp ();
 use Crypt::LE ':errors';
 $|=1;
-plan tests => 10;
+plan tests => 14;
 
 my $le = Crypt::LE->new(autodir => 0);
 
@@ -27,5 +27,13 @@ can_ok($le, 'revoke_certificate');
 # Account for the fact that some test boxes return 'Network is unreachable'.
 my $rv = ($le->directory() == OK or $le->error_details=~/\bunreachable\b/i) ? 1 : 0;
 ok($rv == 1, 'loading resources directory - ' . $le->error_details);
+
+$le->{'domains'} = { 'x.dom' => undef, 'y.dom' => 0, 'z.dom' => 1 };
+$le->{'failed_domains'} = [ [ qw<a.dom b.dom> ], undef ];
+
+ok(@{$le->domains()} == 3, 'Checking the domains list');
+ok(!defined $le->failed_domains(), 'Checking failed domains on the last verification call');
+ok(@{$le->failed_domains(1)} == 2, 'Checking failed domains on any verification call');
+ok(@{$le->verified_domains()} == 1, 'Checking verified domains');
 
 diag( "Testing Crypt::LE $Crypt::LE::VERSION, Workflow methods, $^X" );

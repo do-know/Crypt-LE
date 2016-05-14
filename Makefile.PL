@@ -7,7 +7,6 @@ WriteMakefile
   'EXE_FILES' => [
                    'script/le.pl'
                  ],
-  'PREREQ_PM' => $base_build,
   'CONFIGURE' => \&conf,
   'INSTALLDIRS' => 'site',
   'PL_FILES' => {},

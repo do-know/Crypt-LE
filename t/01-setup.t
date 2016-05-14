@@ -6,7 +6,7 @@ use Test::More;
 use File::Temp ();
 use Crypt::LE ':errors';
 $|=1;
-plan tests => 19;
+plan tests => 24;
 
 my $le = Crypt::LE->new(autodir => 0);
 
@@ -18,8 +18,14 @@ can_ok($le, 'generate_csr');
 can_ok($le, 'csr');
 can_ok($le, 'csr_key');
 can_ok($le, 'set_account_email');
+can_ok($le, 'set_domains');
 
 my $fh = File::Temp->new(SUFFIX => '.le', UNLINK => 1, EXLOCK => 0);
+
+ok($le->set_domains() == INVALID_DATA, 'Setting domain names with no value');
+ok($le->set_domains('a.dom, b.dom') == OK, 'Setting domain names with a string');
+ok($le->set_domains([ qw<a.dom b.dom x.dom> ]) == OK, 'Setting domain names with an array ref');
+ok(@{$le->domains()} == 3, 'Checking the domain names set');
 
 ok($le->load_account_key($fh->filename) == READ_ERROR, 'loading non-existent key');
 

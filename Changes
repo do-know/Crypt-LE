@@ -1,5 +1,14 @@
 Revision history for Crypt-LE
 
+0.17    14 May 2016
+        - Additional functions set_domains/verified_domains have been added to work with domain names and to make it possible 
+          to run the verification process before loading/generating a CSR.
+        - The failed_domains method has been modified and now returns the list of domains failed the verification on any of 
+          the request/accept/verify steps if called with a true value as a parameter. Otherwise the list of domains failed 
+          the process on the most recently called request/accept/verify step gets returned (as usual).
+        - Online resource to generate RSA keys and Certificate Signing Requests is referenced and to be available soon at
+          https://get.zerossl.com/ (should help with CSR on Win32/Win64).
+
 0.16    14 May 2016
         - Configuration changes to allow building PPM for pure Win23/Win64 environments.
 

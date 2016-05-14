@@ -4,7 +4,7 @@ use 5.006;
 use strict;
 use warnings;
 
-our $VERSION = '0.16';
+our $VERSION = '0.17';
 
 =head1 NAME
 
@@ -12,7 +12,7 @@ Crypt::LE - Let's Encrypt API interfacing module.
 
 =head1 VERSION
 
-Version 0.16
+Version 0.17
 
 =head1 SYNOPSIS
 
@@ -326,7 +326,7 @@ sub load_csr {
         $decoded = Crypt::PKCS10->new($csr);
     };
     return $self->_status(LOAD_ERROR, "CSR loading error." . ($@ ? " $@" : "")) unless $decoded;
-    my @list = (ref $domains eq 'ARRAY') ? @{$domains} : $domains ? split /\s*,\s*/, $domains : ();
+    my @list = @{$self->_get_list($domains)};
     my $cn = $decoded->commonName;
     my %alt = map {lc $_, undef} $decoded->subjectAltName('dNSName');
     $alt{lc $cn} = undef if $cn;
@@ -335,7 +335,7 @@ sub load_csr {
     } else {
         $self->_debug("Loaded domain names from CSR: " . join(', ', sort keys %alt));
     }
-    if (my %loaded_domains = map {lc $_, undef} @list) {
+    if (my %loaded_domains = map {$_, undef} @list) {
         unless (join(',', sort keys %loaded_domains) eq join(',', sort keys %alt)) {
             return $self->_status(DATA_MISMATCH, "The list of provided domains does not match the one on the CSR.");
         }
@@ -356,11 +356,11 @@ Returns: OK | ERROR | INVALID_DATA.
 sub generate_csr {
     my $self = shift;
     my $domains = shift;
-    return $self->_status(ERROR, "To generate CSR you need Crypt::OpenSSL::PKCS10 module installed.") unless $pkcs10_available;
+    return $self->_status(ERROR, "To generate CSR you need Crypt::OpenSSL::PKCS10 module installed. Alternatively use https://get.zerossl.com/#csr to generate CSR online.") unless $pkcs10_available;
     # NB: Crypt::OpenSSL::PKCS10 has its quirks, such as issues with DESTROY in PKCS10.xs and segfaults on an attempt 
     # to read non-existent CSR from file. It should work for this particular task though.
     $self->_reset_csr;
-    my @list = map {lc $_} (ref $domains eq 'ARRAY') ? @{$domains} : $domains ? split /\s*,\s*/, $domains : ();
+    my @list = @{$self->_get_list($domains)};
     return $self->_status(INVALID_DATA, "No domains provided.") unless @list;
     my $rsa = $self->csr_key() ? Crypt::OpenSSL::RSA->new_private_key($self->csr_key()) : Crypt::OpenSSL::RSA->generate_key($keysize);
     $rsa->use_pkcs1_padding;
@@ -429,8 +429,7 @@ Returns: OK | INVALID_DATA.
 =cut
 
 sub set_account_email {
-    my $self = shift;
-    my $email = shift;
+    my ($self, $email) = @_;
     unless ($email) {
         undef $self->{email};
         return $self->_status(OK, "Account email has been reset");
@@ -442,6 +441,22 @@ sub set_account_email {
     return $self->_status(INVALID_DATA, "Invalid email provided") unless $email;
     $self->{email} = $email;
     return $self->_status(OK, "Account email has been set to '$email'");
+}
+
+=head2 set_domains($domains)
+
+Sets the list of domains to be used for verification process. This call is optional if you load or generate a CSR, in which case the list of the domains will be set at that point.
+
+Returns: OK | INVALID_DATA.
+
+=cut
+
+sub set_domains {
+    my ($self, $domains) = @_;
+    my %loaded_domains = map {$_, undef} @{$self->_get_list($domains)};
+    return $self->_status(INVALID_DATA, "No domains provided.") unless %loaded_domains;
+    $self->{domains} = \%loaded_domains;
+    return $self->_status(OK, "Domains list is set");
 }
 
 #====================================================================================================
@@ -493,6 +508,11 @@ sub _set_csr {
     $self->{csr} = $csr;
     $self->{csr_key} = $pk;
     $self->{domains} = $domains;
+}
+
+sub _get_list {
+    my ($self, $list) = @_;
+    return [ map {lc $_} (ref $list eq 'ARRAY') ? @{$list} : $list ? split /\s*,\s*/, $list : () ];
 }
 
 #====================================================================================================
@@ -629,10 +649,10 @@ sub request_challenge {
         }
     }
     if (@domains_failed) {
-        $self->{failed_domains} = \@domains_failed;
+        $self->{failed_domains} = [ \@domains_failed ];
         return $self->_status(ERROR, @domains_failed == $domains_requested ? "All domains failed" : "Some domains failed: " . join(", ", @domains_failed));
     } else {
-        undef $self->{failed_domains};
+        $self->{failed_domains} = [ undef ];
     }
     return $self->_status(OK, $domains_requested ? "Requested challenges for $domains_requested domain(s)." : "There are no domains which were not yet requested for challenges.");
 }
@@ -729,10 +749,10 @@ sub accept_challenge {
         }
     }
     if (@domains_failed) {
-        $self->{failed_domains} = \@domains_failed;
+        push @{$self->{failed_domains}}, \@domains_failed;
         return $self->_status(ERROR, $domains_accepted ? "Challenges failed for domains: " . join(", ", @domains_failed) : "All challenges failed");
     } else {
-        undef $self->{failed_domains};
+        push @{$self->{failed_domains}}, undef;
     }
     return $self->_status(OK, $domains_accepted ? "Accepted challenges for $domains_accepted domain(s)." : "There are no domains for which challenges need to be accepted.");
 }
@@ -840,7 +860,6 @@ sub verify_challenge {
                     if ($content->{status}=~/^(?:in)?valid$/) {
                         if ($content->{status} eq 'valid') {
                             $self->_debug("Domain $domain has been verified successfully.");
-                            $self->{domains}->{$domain} = 1;
                             $validated = 1;
                         }
                     }
@@ -869,6 +888,7 @@ sub verify_challenge {
             }
         }
         if ($validated) {
+            $self->{domains}->{$domain} = 1;
             $domains_verified++;
         } else {
             $self->_debug("Domain $domain has failed verification (status code $status).", $content) unless $cb_reset;
@@ -876,10 +896,10 @@ sub verify_challenge {
         }
     }
     if (@domains_failed) {
-        $self->{failed_domains} = \@domains_failed;
+        push @{$self->{failed_domains}}, \@domains_failed;
         return $self->_status(ERROR, $domains_verified ? "Verification failed for domains: " . join(", ", @domains_failed) : "All verifications failed");
     } else {
-        undef $self->{failed_domains};
+        push @{$self->{failed_domains}}, undef;
     }
     return $self->_status(OK, $domains_verified ? "Verified challenges for $domains_verified domain(s)." : "There are no domains pending challenge verification.");
 }
@@ -1048,14 +1068,39 @@ sub domains {
     return $self->{domains} ? [ sort keys %{$self->{domains}} ] : undef;
 }
 
-=head2 failed_domains()
+=head2 failed_domains([$all])
 
-Returns: An array reference to the domain names for which challenge processing has failed (on any of request/accept/verify steps) or undef.
+Returns: An array reference to the domain names for which processing has failed or undef. If any true value is passed as a parameter, then the list 
+will contain domain names which failed on any of the request/accept/verify steps. Otherwise the list will contain the names of the domains failed on 
+the most recently called request/accept/verify step.
 
 =cut
 
 sub failed_domains {
-    return shift->{failed_domains};
+    my ($self, $all) = @_;
+    return undef unless ($self->{failed_domains} and @{$self->{failed_domains}});
+    return $self->{failed_domains}->[-1] unless $all;   
+    my %totals;
+    foreach my $proc (@{$self->{failed_domains}}) {
+        if ($proc) {
+            $totals{$_} = undef for @{$proc};
+        }
+    }
+    my @rv = sort keys %totals;
+    return @rv ? \@rv : undef;
+}
+
+=head2 verified_domains()
+
+Returns: An array reference to the successfully verified domain names.
+
+=cut
+
+sub verified_domains {
+    my $self = shift;
+    return undef unless ($self->{domains} and %{$self->{domains}});
+    my @list = grep { $self->{domains}->{$_} } keys %{$self->{domains}};
+    return @list ? \@list : undef;
 }
 
 =head2 error()
