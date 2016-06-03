@@ -4,6 +4,8 @@ This module provides the functionality necessary to use Let's Encrypt API and ge
 
 > The client + library package is codenamed ZeroSSL with the project homepage at https://ZeroSSL.com
 
+**Note:** If you do not need the automation and the flexibility this package offers, and just want to get a free SSL certificate without installing anything, you can do it too - with the In-Browser client, also at https://ZeroSSL.com
+
 ### COMPATIBILITY
 
 The code has been successfully tested on more than 300 combinations of OS and Perl versions. It should install and run fine on Linux, FreeBSD, NetBSD, etc. It also works on Mac OS X and Windows (tested with ActiveState and Strawberry Perl). You can find appropriate PPMs at [ActiveState](https://code.activestate.com/ppm/Crypt-LE/). Please note that pure Windows environments are supported starting from version 0.17 of the module. If you are using Cygwin, then earlier versions would work too.
