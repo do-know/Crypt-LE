@@ -4,14 +4,29 @@ The Crypt::LE module provides the functionality necessary to use Let's Encrypt A
 certificates for your domains. It can also be used to generate private RSA keys or Certificate Signing Requests
 without resorting to openssl command line.
 
+REQUIREMENTS
+
+There are just 3 essential things which should be in place for the package to be successfully installed: 
+"gcc", "make" and the SSL development package. The SSL development package name differs depending on 
+Linux distribution and it can be either "libssl-dev" or "openssl-devel". 
+See https://zerossl.com/install-and-use.html for more details.
+
 INSTALLATION
 
-To install this module, run the following commands:
+- With CPANminus
 
-	perl Makefile.PL
-	make
-	make test
-	make install
+  cpanm Crypt::LE
+
+- With CPAN
+
+  cpan -i Crypt::LE
+
+- Manual installation:
+
+  perl Makefile.PL
+  make
+  make test
+  make install
 
 PLUGINS
 
