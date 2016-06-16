@@ -12,7 +12,7 @@ The code has been successfully tested on more than 300 combinations of OS and Pe
 
 ### REQUIREMENTS
 
-There are just 3 essential things which should be in place for the package to be successfully installed: "gcc", "make" and the SSL development package. The SSL development package name differs depending on Linux distribution and it can be either "libssl-dev" or "openssl-devel". See https://zerossl.com/install-and-use.html for more details.
+There are just 3 essential things which should be in place for the package to be successfully installed: "gcc", "make" and the SSL development package. The SSL development package name differs depending on Linux distribution and it can be either "libssl-dev" or "openssl-devel". See https://zerossl.com/installation.html for more details.
 
 ### INSTALLATION
 
