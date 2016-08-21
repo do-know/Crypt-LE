@@ -12,7 +12,7 @@ use Log::Log4perl;
 use Module::Load;
 use Crypt::LE ':errors';
 
-my $VERSION = '0.17';
+my $VERSION = '0.18';
 
 use constant PEER_CRT  => 4;
 use constant CRT_DEPTH => 5;
@@ -113,13 +113,19 @@ sub work {
         return $le->error_details if $le->set_account_email($opt->{'email'});
     }
     
+    $opt->{'logger'}->info("Registering the account key");
     return $le->error_details if $le->register;
+    my $current_account_id = $le->registration_id||'unknown';
+    $opt->{'logger'}->info($le->new_registration ? "The key has been successfully registered. ID: $current_account_id" : "The key is already registered. ID: $current_account_id");
     $opt->{'logger'}->info("Make sure to check TOS at " . $le->tos) if ($le->tos_changed and $le->tos);
     $le->accept_tos();
-    # We might not need to re-verify, verification holds for quite a few months.
-    unless ($le->request_certificate()) {
+    # We might not need to re-verify, verification holds for a while.
+    my $new_crt_status = $le->request_certificate();
+    unless ($new_crt_status) {
         $opt->{'logger'}->info("Received domain certificate, no validation required at this time.");
     } else {
+        # If it's not an auth problem, but blacklisted domains for example - stop.
+        return "Error requesting certificate: " . $le->error_details if $new_crt_status != AUTH_ERROR;
         return $le->error_details if $le->request_challenge();
         return $le->error_details if $le->accept_challenge($opt->{'handler'} || \&process_challenge, $opt->{'handle-params'}, $opt->{'handle-as'});
         return $le->error_details if $le->verify_challenge($opt->{'handler'} || \&process_verification, $opt->{'handle-params'}, $opt->{'handle-as'});
@@ -145,7 +151,7 @@ sub work {
         };
         my $rv;
         eval {
-	    $rv = $opt->{'complete-handler'}->complete($data, $opt->{'complete-params'});
+        $rv = $opt->{'complete-handler'}->complete($data, $opt->{'complete-params'});
         };
         if ($@ or !$rv) {
             return "Completion handler " . ($@ ? "thrown an error: $@" : "did not return a true value");
@@ -321,10 +327,10 @@ sub process_challenge {
            $params->{'logger'}->error("File already exists - this should not be the case, please move it or remove it.");
            return 0;
         }
-	if (_write($file, $text)) {
-	   $params->{'logger'}->error("Failed to save a challenge file '$file' for domain '$challenge->{domain}'");
+    if (_write($file, $text)) {
+       $params->{'logger'}->error("Failed to save a challenge file '$file' for domain '$challenge->{domain}'");
            return 0;
-	} else {
+    } else {
            $params->{'logger'}->info("Successfully saved a challenge file '$file' for domain '$challenge->{domain}'");
            return 1;
         }
@@ -334,8 +340,8 @@ Challenge for $challenge->{domain} requires:
 A file '$challenge->{token}' in '/.well-known/acme-challenge/' with the text: $text
 When done, press <Enter>
 EOF
- 	<STDIN>;
-	return 1;
+    <STDIN>;
+    return 1;
 };
 
 sub process_verification {
@@ -360,7 +366,7 @@ sub process_verification {
 
 __END__
 
- ZeroSSL Crypt::LE client v0.17
+ ZeroSSL Crypt::LE client v0.18
 
  ===============
  USAGE EXAMPLES: 

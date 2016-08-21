@@ -1,5 +1,18 @@
 Revision history for Crypt-LE
 
+0.18    21 August 2016
+        - Loading keys, CSR and certificate is now possible from variables. Passing the string to "load_account_key",
+          "load_csr", "load_csr_key" or "revoke_certificate" functions works as before and treated as a filename.
+          The scalar reference though will be treated as an actual content of the key, CSR or certificate.
+          That allows such data to be stored in a database for example, but used with the Crypt::LE library.
+        - The case of the blacklisted domains (those are similar to well-known brands for example) is handled better
+          and the client will stop early with producing appropriate messages, before even attempting to request any
+          challenges.
+        - Additional check for domain names, both entered as a parameter and loaded from CSR, is implemented.
+          This should cover the cases of attempting to use unsupported by LE entity types (such as URI, IP, email)
+          and attempts to request wildcard certificates (also not supported by LE at the moment).
+        - Registration ID for the key is now accessible directly with "registration_id" call and reported by the client.
+
 0.17    14 May 2016
         - Additional functions set_domains/verified_domains have been added to work with domain names and to make it possible 
           to run the verification process before loading/generating a CSR.

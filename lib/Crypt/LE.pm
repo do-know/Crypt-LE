@@ -4,7 +4,7 @@ use 5.006;
 use strict;
 use warnings;
 
-our $VERSION = '0.17';
+our $VERSION = '0.18';
 
 =head1 NAME
 
@@ -12,12 +12,11 @@ Crypt::LE - Let's Encrypt API interfacing module.
 
 =head1 VERSION
 
-Version 0.17
+Version 0.18
 
 =head1 SYNOPSIS
 
  use Crypt::LE;
- use File::Slurp;
     
  my $le = Crypt::LE->new();
  $le->load_account_key('account.pem');
@@ -29,7 +28,6 @@ Version 0.17
  $le->verify_challenge();
  $le->request_certificate();
  my $cert = $le->certificate();
- write_file('domain.cert', $cert) if $cert;
  ...
  sub process_challenge {
     my $challenge = shift;
@@ -97,6 +95,9 @@ DATA_MISMATCH
 ALREADY_DONE
 
 =item *
+BAD_REQUEST
+
+=item *
 AUTH_ERROR
 
 =item *
@@ -153,12 +154,13 @@ use constant ERROR                  => 500;
 use constant SUCCESS                => 200;
 use constant CREATED                => 201;
 use constant ACCEPTED               => 202;
+use constant BAD_REQUEST            => 400;
 use constant AUTH_ERROR             => 403;
 use constant ALREADY_DONE           => 409;
 
 use constant NID_subject_alt_name   => 85;
 
-our @EXPORT_OK = (qw<OK READ_ERROR LOAD_ERROR INVALID_DATA DATA_MISMATCH ERROR AUTH_ERROR ALREADY_DONE>);
+our @EXPORT_OK = (qw<OK READ_ERROR LOAD_ERROR INVALID_DATA DATA_MISMATCH ERROR BAD_REQUEST AUTH_ERROR ALREADY_DONE>);
 our %EXPORT_TAGS = ( errors => [ @EXPORT_OK ] );
 
 my $header = 'replay-nonce';
@@ -257,9 +259,9 @@ sub new {
 # API Setup functions
 #====================================================================================================
 
-=head2 load_account_key($filename)
+=head2 load_account_key($filename|$scalar_ref)
 
-Loads the private account key from the file in PEM or DER formats.
+Loads the private account key from the file or scalar in PEM or DER formats.
 
 Returns: OK | READ_ERROR | LOAD_ERROR | INVALID_DATA.
 
@@ -305,9 +307,9 @@ sub account_key {
     return $self->{key} ? $self->{key}->get_private_key_string : undef;
 }
 
-=head2 load_csr($filename [, $domains])
+=head2 load_csr($filename|$scalar_ref [, $domains])
 
-Loads Certificate Signing Requests from file. Domains list can be omitted or it can be given as a string of comma-separated names or as an array reference.
+Loads Certificate Signing Requests from the file or scalar. Domains list can be omitted or it can be given as a string of comma-separated names or as an array reference.
 If omitted, then names will be loaded from the CSR. If it is given, then the list of names will be verified against those found on CSR.
 
 Returns: OK | READ_ERROR | LOAD_ERROR | INVALID_DATA | DATA_MISMATCH.
@@ -333,7 +335,11 @@ sub load_csr {
     unless (%alt) {
         return $self->_status(INVALID_DATA, "No domains found on CSR.");
     } else {
-        $self->_debug("Loaded domain names from CSR: " . join(', ', sort keys %alt));
+        my @list = sort keys %alt;
+        if (my $odd = $self->_verify_list(\@list)) {
+             return $self->_status(INVALID_DATA, "Unsupported domain names on CSR: " . join(", ", @{$odd}));
+        }
+        $self->_debug("Loaded domain names from CSR: " . join(', ', @list));
     }
     if (my %loaded_domains = map {$_, undef} @list) {
         unless (join(',', sort keys %loaded_domains) eq join(',', sort keys %alt)) {
@@ -362,6 +368,9 @@ sub generate_csr {
     $self->_reset_csr;
     my @list = @{$self->_get_list($domains)};
     return $self->_status(INVALID_DATA, "No domains provided.") unless @list;
+    if (my $odd = $self->_verify_list(\@list)) {
+         return $self->_status(INVALID_DATA, "Unsupported domain names provided: " . join(", ", @{$odd}));
+    }
     my $rsa = $self->csr_key() ? Crypt::OpenSSL::RSA->new_private_key($self->csr_key()) : Crypt::OpenSSL::RSA->generate_key($keysize);
     $rsa->use_pkcs1_padding;
     $rsa->use_sha256_hash;
@@ -387,9 +396,9 @@ sub csr {
     return shift->{csr};
 }
 
-=head2 load_csr_key($filename)
+=head2 load_csr_key($filename|$scalar_ref)
 
-Loads the CSR key from file (to be used for generating a new CSR).
+Loads the CSR key from the file or scalar (to be used for generating a new CSR).
 
 Returns: OK | READ_ERROR | LOAD_ERROR.
 
@@ -453,8 +462,12 @@ Returns: OK | INVALID_DATA.
 
 sub set_domains {
     my ($self, $domains) = @_;
-    my %loaded_domains = map {$_, undef} @{$self->_get_list($domains)};
-    return $self->_status(INVALID_DATA, "No domains provided.") unless %loaded_domains;
+    my @list = @{$self->_get_list($domains)};
+    return $self->_status(INVALID_DATA, "No domains provided.") unless @list;
+    if (my $odd = $self->_verify_list(\@list)) {
+         return $self->_status(INVALID_DATA, "Unsupported domain names provided: " . join(", ", @{$odd}));
+    }
+    my %loaded_domains = map {$_, undef} @list;
     $self->{domains} = \%loaded_domains;
     return $self->_status(OK, "Domains list is set");
 }
@@ -515,6 +528,12 @@ sub _get_list {
     return [ map {lc $_} (ref $list eq 'ARRAY') ? @{$list} : $list ? split /\s*,\s*/, $list : () ];
 }
 
+sub _verify_list {
+    my ($self, $list) = @_;
+    my @odd = grep { /[\[\{\(\<\*\@\>\)\}\]\/\\:]/ or /^[\d\.]+$/ or !/\./ } @{$list};
+    return @odd ? \@odd : undef;
+}
+
 #====================================================================================================
 # API Workflow functions
 #====================================================================================================
@@ -561,6 +580,7 @@ sub register {
     $req->{contact} = [ "mailto:$self->{email}" ] if $self->{email};
     my ($status, $content) = $self->_request($self->{directory}->{'new-reg'}, $req);
     $self->{directory}->{reg} = $self->{location} if $self->{location};
+    $self->{registration_id} = undef;
     if ($status == ALREADY_DONE) {
         $self->{new_registration} = 0;
         $self->_debug("Key is already registered, reg path: $self->{directory}->{reg}.");
@@ -584,6 +604,8 @@ sub register {
     } else {
         return $self->_status(ERROR, $content);
     }
+    $self->{registration_id} = $self->{registration_info}->{id} if ($self->{registration_info} and ref $self->{registration_info} eq 'HASH');
+    $self->_debug("Account ID: $self->{registration_id}") if $self->{registration_id};
     return $self->_status(OK, "Registration success: TOS change status - $self->{tos_changed}, new registration flag - $self->{new_registration}.");
 }
 
@@ -614,7 +636,7 @@ Returns: OK | ERROR.
 sub request_challenge {
     my $self = shift;
     $self->_status(ERROR, "No domains are set.") unless $self->{domains};
-    my ($domains_requested, @domains_failed);
+    my ($domains_requested, %domains_failed);
     foreach my $domain (sort keys %{$self->{domains}}) {
         if (defined $self->{domains}->{$domain}) {
             $self->_debug("Domain $domain " . ($self->{domains}->{$domain} ? "has been already validated, skipping." : "challenge has been already requested, skipping."));
@@ -641,16 +663,20 @@ sub request_challenge {
                 $self->{domains}->{$domain} = 0;
             } else {
                 $self->_debug("Received no valid challenges for $domain.");
-                push @domains_failed, $domain;
+                $domains_failed{$domain} = $self->_pull_error($content)||'No valid challenges';
             }
         } else {
-            $self->_debug("Failed to receive challenges for $domain.");
-            push @domains_failed, $domain;
+            my $err = $self->_pull_error($content);
+            $self->_debug("Failed to receive challenges for $domain. $err");
+            $domains_failed{$domain} = $err||'Failed to receive challenges';
         }
     }
-    if (@domains_failed) {
-        $self->{failed_domains} = [ \@domains_failed ];
-        return $self->_status(ERROR, @domains_failed == $domains_requested ? "All domains failed" : "Some domains failed: " . join(", ", @domains_failed));
+    if (%domains_failed) {
+        my @failed = sort keys %domains_failed;
+        $self->{failed_domains} = [ \@failed ];
+        my $status = join "\n", map { "$_: $domains_failed{$_}" } @failed;
+        my $info = @failed == $domains_requested ? "All domains failed" : "Some domains failed";
+        return $self->_status(ERROR, "$info\n$status");
     } else {
         $self->{failed_domains} = [ undef ];
     }
@@ -868,13 +894,12 @@ sub verify_challenge {
         }
         if ($cb) {
             my $rv;
-            my $error = (ref $content eq 'HASH' and $content->{error} and $content->{error}->{detail}) ? $content->{error}->{detail} : '';
             my $callback_data = { 
                                     domain => $domain, 
                                     token => $self->{challenges}->{$domain}->{$type}->{token},
                                     fingerprint => $self->{fingerprint}, 
                                     valid => $validated, 
-                                    error => $error,
+                                    error => $self->_pull_error($content),
                                     logger => $self->{logger},
                                 };
             eval {
@@ -945,7 +970,7 @@ sub request_issuer_certificate {
     return $self->_status(ERROR, $content);
 }
 
-=head2 revoke_certificate($certificate_file)
+=head2 revoke_certificate($certificate_file|$scalar_ref)
 
 Revokes a certificate.
 
@@ -957,7 +982,7 @@ sub revoke_certificate {
     my $self = shift;
     my $file = shift;
     my $crt = $self->_file($file);
-    return $self->_status(READ_ERROR, "Could not read the certificate from '$file'.") unless $crt;
+    return $self->_status(READ_ERROR, "Certificate reading error.") unless $crt;
     my ($status, $content) = $self->_request($self->{directory}->{'revoke-cert'}, { resource => 'revoke-cert', certificate => encode_base64url(Crypt::Format::pem2der($crt)) });
     if ($status == SUCCESS) {
         return $self->_status(OK, "Certificate has been revoked.");
@@ -1015,6 +1040,16 @@ Returns: Registration information structure returned by Let's Encrypt for your k
 
 sub registration_info {
     return shift->{registration_info};
+}
+
+=head2 registration_id()
+
+Returns: Registration ID returned by Let's Encrypt for your key or undef.
+
+=cut
+
+sub registration_id {
+    return shift->{registration_id};
 }
 
 =head2 certificate()
@@ -1122,13 +1157,8 @@ Returns: Last error details if available or a generic 'error' string otherwise. 
 sub error_details {
     my $self = shift;
     if ($self->{error}) {
-        if ((ref $self->{error} eq 'HASH') and $self->{error}->{detail}) {
-            return $self->{error}->{detail};
-        } elsif (ref $self->{error}) {
-            return 'error';
-        } else {
-            return $self->{error};
-        }
+        my $err = $self->_pull_error($self->{error});
+        return $err ? $err : (ref $self->{error}) ? 'error' : $self->{error};
     }
     return '';
 }
@@ -1225,18 +1255,31 @@ sub _status {
     return $code;
 }
 
+sub _pull_error {
+    my $self = shift;
+    my ($err) = @_;
+    if ($err and ref $err eq 'HASH') {
+        return $err->{error}->{detail} if ($err->{error} and $err->{error}->{detail});
+        return $err->{detail} if $err->{detail};
+    }
+    return '';
+}
+
 sub _file {
     my $self = shift;
     my ($file) = @_;
     return unless $file;
-    my ($fh, $content) = (new IO::File "<$file");
-    if (defined $fh) {
-        local $/;
-        $fh->binmode;
-        $content = <$fh>;
-        $fh->close;
+    unless (ref $file) {
+        my ($fh, $content) = (new IO::File "<$file");
+        if (defined $fh) {
+            local $/;
+            $fh->binmode;
+            $content = <$fh>;
+            $fh->close;
+        }
+        return $content;
     }
-    return $content;
+    return (ref $file eq 'SCALAR') ? $$file : undef;
 }
 
 sub _convert {

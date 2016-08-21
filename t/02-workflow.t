@@ -20,13 +20,23 @@ can_ok($le, 'request_certificate');
 can_ok($le, 'request_issuer_certificate');
 can_ok($le, 'revoke_certificate');
 
-# We don't want to ship the same account key to everyone with this module and
-# we don't really want to pollute Let's Encrypt staging server with multiple odd
-# registrations, so just making sure that interaction works.
+SKIP: {
 
-# Account for the fact that some test boxes return 'Network is unreachable'.
-my $rv = ($le->directory() == OK or $le->error_details=~/\bunreachable\b/i) ? 1 : 0;
-ok($rv == 1, 'loading resources directory - ' . $le->error_details);
+    # Skip the test if environment tells us to (check all variations Debian rules suggest)
+    skip "Environment is configured with no network tests enabled, skipping CA resources testing", 1 if 
+	($ENV{'NO_NETWORK_TESTING'} || $ENV{'NO_NETWORK'} || $ENV{'NOINTERNET'} || 
+	 (defined $ENV{'CONNECTED_TO_NET'} && !$ENV{'CONNECTED_TO_NET'}) ||
+         (defined $ENV{'HAVE_INTERNET'} && !$ENV{'HAVE_INTERNET'})
+        );
+    # We don't want to ship the same account key to everyone with this module and
+    # we don't really want to pollute Let's Encrypt staging server with multiple odd
+    # registrations, so just making sure that interaction works.
+
+    # Account for the fact that some test boxes return 'Network is unreachable' and that staging API might be down.
+    my $rv = ($le->directory() == OK or $le->error_details=~/(?:\bunreachable\b|<HTML>)/i) ? 1 : 0;
+    ok($rv == 1, 'Loading resources directory ' . $le->error_details);
+
+}
 
 $le->{'domains'} = { 'x.dom' => undef, 'y.dom' => 0, 'z.dom' => 1 };
 $le->{'failed_domains'} = [ [ qw<a.dom b.dom> ], undef ];

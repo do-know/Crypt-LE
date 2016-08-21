@@ -30,7 +30,10 @@ sub conf {
                    'Crypt::OpenSSL::Bignum' => '0.06',
                    'Crypt::PKCS10' => '1.5',
                    'JSON::MaybeXS' => '1.003005',
-                   'Crypt::Format' => '0.02'
+                   'Crypt::Format' => '0.02',
+                   'Digest::SHA' => 0,
+                   'Scalar::Util' => 0,
+                   'File::Temp' => 0,
                  };
     delete $base_build->{'Crypt::OpenSSL::PKCS10'} if $^O=~/^MSWin/;
     return { 'PREREQ_PM' => $base_build };
