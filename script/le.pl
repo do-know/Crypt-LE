@@ -10,9 +10,9 @@ use Time::Piece;
 use Time::Seconds;
 use Log::Log4perl;
 use Module::Load;
-use Crypt::LE ':errors';
+use Crypt::LE ':errors', ':keys';
 
-my $VERSION = '0.18';
+my $VERSION = '0.19';
 
 use constant PEER_CRT  => 4;
 use constant CRT_DEPTH => 5;
@@ -48,7 +48,12 @@ sub work {
     }
 
     if ($opt->{'revoke'}) {
-        my $rv = $le->revoke_certificate($opt->{'crt'});
+        return "Name of the certificate file should be specified." unless $opt->{'crt'};
+        my $crt = _read($opt->{'crt'});
+        return "Could not read the certificate file." unless $crt;
+        # Take the first certificate in file, disregard the issuer's one.
+        $crt=~s/^(.*?-+\s*END CERTIFICATE\s*-+).*/$1/s;
+        my $rv = $le->revoke_certificate(\$crt);
         if ($rv == OK) {
             $opt->{'logger'}->info("Certificate has been revoked.");
         } elsif ($rv == ALREADY_DONE) {
@@ -71,7 +76,7 @@ sub work {
         } else {
              $opt->{'logger'}->info("New CSR will be based on a generated key");
         }
-        $le->generate_csr($opt->{'domains'}) == OK or return "Could not generate a CSR: " . $le->error_details;
+        $le->generate_csr($opt->{'domains'}, KEY_RSA, $opt->{'legacy'} ? 2048 : 4096) == OK or return "Could not generate a CSR: " . $le->error_details;
         $opt->{'logger'}->info("Saving a new CSR into $opt->{'csr'}");
         return "Failed to save a CSR" if _write($opt->{'csr'}, $le->csr);
         unless (-e $opt->{'csr-key'}) {
@@ -140,8 +145,17 @@ sub work {
         $opt->{'logger'}->warn("Will be saving the domain certificate alone, not the full chain.");
         return "Failed to save the domain certificate file" if _write($opt->{'crt'}, $le->certificate);
     } else {
-        $opt->{'logger'}->info("Saving the full certificate chain.");
-        return "Failed to save the domain certificate file" if _write($opt->{'crt'}, $le->certificate . "\n" . $le->issuer);
+        unless ($opt->{'legacy'}) {
+            $opt->{'logger'}->info("Saving the full certificate chain to $opt->{'crt'}.");
+            return "Failed to save the domain certificate file" if _write($opt->{'crt'}, $le->certificate . "\n" . $le->issuer . "\n");
+        } else {
+            $opt->{'logger'}->info("Saving the domain certificate to $opt->{'crt'}.");
+            return "Failed to save the domain certificate file" if _write($opt->{'crt'}, $le->certificate);
+            $opt->{'crt'}=~s/\.[^\.]+$//;
+            $opt->{'crt'}.='.ca';
+            $opt->{'logger'}->info("Saving the issuer's certificate to $opt->{'crt'}.");
+            $opt->{'logger'}->error("Failed to save the issuer's certificate, try to download manually from " . $le->issuer_url) if _write($opt->{'crt'}, $le->issuer);
+        }
     }
     if ($opt->{'complete-handler'}) {
         my $data = {
@@ -168,7 +182,7 @@ sub parse_options {
     
     GetOptions ($opt, 'key=s', 'csr=s', 'csr-key=s', 'domains=s', 'path=s', 'crt=s', 'email=s', 'renew=i',
             'handle-with=s', 'handle-as=s', 'handle-params=s', 'complete-with=s', 'complete-params=s', 'log-config=s',
-            'generate-missing', 'generate-only', 'revoke', 'unlink', 'live', 'debug', 'help') || return "Use --help to see the usage examples.\n";
+            'generate-missing', 'generate-only', 'revoke', 'legacy', 'unlink', 'live', 'debug', 'help') || return "Use --help to see the usage examples.\n";
             
     usage_and_exit() unless ($args and !$opt->{'help'});
     my $rv = reconfigure_log($opt);
@@ -176,8 +190,11 @@ sub parse_options {
 
     $opt->{'logger'}->info("[ ZeroSSL Crypt::LE client v$VERSION started. ]");
 
-    unless ($opt->{'key'} and (-r $opt->{'key'} or $opt->{'generate-missing'})) {
-        return "Incorrect parameters - need an account key loaded or generated.";
+    return "Incorrect parameters - need account key file name specified." unless $opt->{'key'};
+    if (-e $opt->{'key'}) {
+        return "Account key file is not readable." unless (-r $opt->{'key'});
+    } else {
+        return "Account key file is missing and the option to generate missing files is not used." unless $opt->{'generate-missing'};
     }
 
     unless ($opt->{'crt'} or $opt->{'generate-only'}) {
@@ -188,12 +205,13 @@ sub parse_options {
         return "Need a certificate file for revoke to work." unless (-r $opt->{'crt'});
         return "Need an account key - revoke assumes you had a registered account when got the certificate." unless (-r $opt->{'key'});
     } else {
-        unless ($opt->{'csr'} and (-r $opt->{'csr'} or ($opt->{'csr-key'} and $opt->{'generate-missing'})))  {
-            return "Incorrect parameters - need CSR loaded or generated.";
-        }
-
-        if (!$opt->{'generate-missing'} and ! -r $opt->{'csr'} and (!$opt->{'domains'} or $opt->{'domains'}=~/^\s*$/)) {
-            return "Domain list should be provided to generate a CSR.";
+        return "Incorrect parameters - need CSR file name specified." unless $opt->{'csr'};
+        if (-e $opt->{'csr'}) {
+            return "CSR file is not readable." unless (-r $opt->{'csr'});
+        } else {
+            return "CSR file is missing and the option to generate missing files is not used." unless $opt->{'generate-missing'};
+            return "CSR file is missing and CSR-key file name is not specified." unless $opt->{'csr-key'};
+            return "Domain list should be provided to generate a CSR." unless ($opt->{'domains'} and $opt->{'domains'}!~/^[\s\,]*$/);
         }
 
         if ($opt->{'path'}) {
@@ -366,7 +384,7 @@ sub process_verification {
 
 __END__
 
- ZeroSSL Crypt::LE client v0.18
+ ZeroSSL Crypt::LE client v0.19
 
  ===============
  USAGE EXAMPLES: 
@@ -470,6 +488,7 @@ methods:
  renew <XX>                       - Renew the certificate if XX or fewer days are left until its expiration.
  crt <file>                       - Name for the domain certificate file.
  revoke                           - Revoke a certificate.
+ legacy                           - Legacy mode for old Apache, some Control Panels, AWS services and specific devices not supporting long keys.
  live                             - Connect to a live server instead of staging.
  debug                            - Print out debug messages.
  help                             - This screen.

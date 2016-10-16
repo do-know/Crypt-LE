@@ -4,7 +4,7 @@ use 5.006;
 use strict;
 use warnings;
 
-our $VERSION = '0.18';
+our $VERSION = '0.19';
 
 =head1 NAME
 
@@ -12,7 +12,7 @@ Crypt::LE - Let's Encrypt API interfacing module.
 
 =head1 VERSION
 
-Version 0.18
+Version 0.19
 
 =head1 SYNOPSIS
 
@@ -160,8 +160,11 @@ use constant ALREADY_DONE           => 409;
 
 use constant NID_subject_alt_name   => 85;
 
-our @EXPORT_OK = (qw<OK READ_ERROR LOAD_ERROR INVALID_DATA DATA_MISMATCH ERROR BAD_REQUEST AUTH_ERROR ALREADY_DONE>);
-our %EXPORT_TAGS = ( errors => [ @EXPORT_OK ] );
+use constant KEY_RSA                => 0;
+use constant KEY_ECC                => 1;
+
+our @EXPORT_OK = (qw<OK READ_ERROR LOAD_ERROR INVALID_DATA DATA_MISMATCH ERROR BAD_REQUEST AUTH_ERROR ALREADY_DONE KEY_RSA KEY_ECC>);
+our %EXPORT_TAGS = ( 'errors' => [ @EXPORT_OK[0..8] ], 'keys' => [ @EXPORT_OK[9..10] ] );
 
 my $header = 'replay-nonce';
 my $j = JSON->new->canonical()->allow_nonref();
@@ -350,9 +353,11 @@ sub load_csr {
     return $self->_status(OK, "CSR loaded.");
 }
 
-=head2 generate_csr($domains)
+=head2 generate_csr($domains, [$key_type], [$key_attr])
 
-Generates a new Certificate Signing Requests based on a new RSA key of $keysize bits (4096 by default). 
+Generates a new Certificate Signing Request. Optionally accepts key type and key attribute parameters, where key type should
+be either KEY_RSA or KEY_ECC (not yet supported) and key attribute is either the key size (for RSA) or the curve (for ECC).
+By default an RSA key of 4096 bits will be used.
 Domains list is mandatory and can be given as a string of comma-separated names or as an array reference.
 
 Returns: OK | ERROR | INVALID_DATA.
@@ -361,7 +366,11 @@ Returns: OK | ERROR | INVALID_DATA.
 
 sub generate_csr {
     my $self = shift;
-    my $domains = shift;
+    my ($domains, $key_type, $key_attr) = @_;
+    $key_type||=KEY_RSA;
+    $key_attr = $keysize if (!$key_attr and $key_type == KEY_RSA);
+    return $self->_status(INVALID_DATA, "Unsupported key type") unless ($key_type=~/^\d+$/ and $key_type <= KEY_RSA);
+    return $self->_status(INVALID_DATA, "Unsupported key size") if ($key_type == KEY_RSA and ($key_attr < 2048 or $key_attr%1024));
     return $self->_status(ERROR, "To generate CSR you need Crypt::OpenSSL::PKCS10 module installed. Alternatively use https://get.zerossl.com/#csr to generate CSR online.") unless $pkcs10_available;
     # NB: Crypt::OpenSSL::PKCS10 has its quirks, such as issues with DESTROY in PKCS10.xs and segfaults on an attempt 
     # to read non-existent CSR from file. It should work for this particular task though.
@@ -371,7 +380,7 @@ sub generate_csr {
     if (my $odd = $self->_verify_list(\@list)) {
          return $self->_status(INVALID_DATA, "Unsupported domain names provided: " . join(", ", @{$odd}));
     }
-    my $rsa = $self->csr_key() ? Crypt::OpenSSL::RSA->new_private_key($self->csr_key()) : Crypt::OpenSSL::RSA->generate_key($keysize);
+    my $rsa = $self->csr_key() ? Crypt::OpenSSL::RSA->new_private_key($self->csr_key()) : Crypt::OpenSSL::RSA->generate_key($key_attr);
     $rsa->use_pkcs1_padding;
     $rsa->use_sha256_hash;
     my $csr = Crypt::OpenSSL::PKCS10->new_from_rsa($rsa);

@@ -4,9 +4,9 @@ use strict;
 use warnings;
 use Test::More;
 use File::Temp ();
-use Crypt::LE ':errors';
+use Crypt::LE ':errors', ':keys';
 $|=1;
-plan tests => 41;
+plan tests => 47;
 
 my $le = Crypt::LE->new(autodir => 0);
 my $usable_csr = <<EOF;
@@ -108,7 +108,7 @@ SKIP: {
 
     eval { require Crypt::OpenSSL::PKCS10 };
 
-    skip "Crypt::OpenSSL:PKCS10 is not installed, skipping CSR generation tests.", 11 if $@;
+    skip "Crypt::OpenSSL:PKCS10 is not installed, skipping CSR generation tests.", 17 if $@;
 
     ok($le->generate_csr() == INVALID_DATA, 'Generating CSR without providing domain names');
 
@@ -130,6 +130,13 @@ SKIP: {
     ok($le->generate_csr('a@b.c') == INVALID_DATA, 'Generating CSR for unsupported entity type (email)');
     ok($le->generate_csr('abc') == INVALID_DATA, 'Generating CSR for unsupported entity type (dotless name)');
     ok($le->generate_csr('*.domain.example') == INVALID_DATA, 'Generating CSR for unsupported entity type (wildcard)');
+
+    ok($le->generate_csr('odd.domain', KEY_RSA) == OK, 'Generating RSA-based CSR (default)');
+    ok($le->generate_csr('odd.domain', KEY_RSA, 1024) == INVALID_DATA, 'Generating RSA-based CSR (short key)');
+    ok($le->generate_csr('odd.domain', KEY_RSA, 2048) == OK, 'Generating RSA-based CSR (regular key)');
+    ok($le->generate_csr('odd.domain', KEY_RSA, 3000) == INVALID_DATA, 'Generating RSA-based CSR (odd key)');
+    ok($le->generate_csr('odd.domain', KEY_ECC) == INVALID_DATA, 'Generating ECC-based CSR (default)');
+    ok($le->generate_csr('odd.domain', KEY_ECC, 'test') == INVALID_DATA, 'Generating ECC-based CSR (odd curve)');
 
 }
 
