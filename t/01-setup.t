@@ -6,7 +6,7 @@ use Test::More;
 use File::Temp ();
 use Crypt::LE ':errors', ':keys';
 $|=1;
-plan tests => 47;
+plan tests => 46;
 
 my $le = Crypt::LE->new(autodir => 0);
 my $usable_csr = <<EOF;
@@ -96,48 +96,45 @@ $fh = File::Temp->new(SUFFIX => '.le', UNLINK => 1, EXLOCK => 0);
 
 ok($le->load_csr($fh->filename) == READ_ERROR, 'Loading non-existent CSR');
 my $broken_csr = '123456789';
+
 # Try setting CSR from a variable rather than file
 ok($le->load_csr(\$usable_csr) == OK, 'Setting a valid CSR from scalar');
 ok($le->load_csr(\$invalid_csr) == INVALID_DATA, 'Setting an invalid CSR from scalar');
 ok($le->load_csr(\$broken_csr) == LOAD_ERROR, 'Setting a broken CSR from scalar');
+
 # Same for the CSR key
 ok($le->load_csr_key(\$usable_key) == OK, 'Setting a valid CSR key from scalar');
-ok($le->load_csr_key(\$invalid_key) == LOAD_ERROR, 'Setting an invalid CSR key from scalar');
 
-SKIP: {
+# CSR tests
+ok($le->generate_csr() == INVALID_DATA, 'Generating CSR without providing domain names');
+ok($le->generate_csr('odd.domain') == OK, 'Generating CSR for one domain');
+ok($le->generate_csr('odd.domain,another.domain,yet.another.domain') == OK, 'Generating CSR for multiple domains');
+ok($le->csr, 'Retrieving generated CSR');
+ok($le->csr_key(), 'Retrieving the key used for CSR');
 
-    eval { require Crypt::OpenSSL::PKCS10 };
+print $fh $le->csr;
+$fh->flush;
+ok($le->load_csr($fh->filename) == OK, 'Reloading CSR');
 
-    skip "Crypt::OpenSSL:PKCS10 is not installed, skipping CSR generation tests.", 17 if $@;
+# Try creating CSR with unsupported names, use already known usable key to speed up the process
+ok($le->generate_csr('http://some.domain') == INVALID_DATA, 'Generating CSR for unsupported entity type (URI)');
+ok($le->generate_csr('10.0.0.100') == INVALID_DATA, 'Generating CSR for unsupported entity type (IP)');
+ok($le->generate_csr('a@b.c') == INVALID_DATA, 'Generating CSR for unsupported entity type (email)');
+ok($le->generate_csr('abc') == INVALID_DATA, 'Generating CSR for unsupported entity type (dotless name)');
+ok($le->generate_csr('*.domain.example') == INVALID_DATA, 'Generating CSR for unsupported entity type (wildcard)');
 
-    ok($le->generate_csr() == INVALID_DATA, 'Generating CSR without providing domain names');
+# Re-use previously generated key/CSR for RSA checks
+ok($le->generate_csr('odd.domain', KEY_RSA) == OK, 'Generating RSA-based CSR (default)');
+ok($le->generate_csr('odd.domain', KEY_RSA, 1024) == INVALID_DATA, 'Generating RSA-based CSR (short key)');
+ok($le->generate_csr('odd.domain', KEY_RSA, 2048) == OK, 'Generating RSA-based CSR (regular key)');
+ok($le->generate_csr('odd.domain', KEY_RSA, 3000) == INVALID_DATA, 'Generating RSA-based CSR (odd key)');
 
-    ok($le->generate_csr('odd.domain') == OK, 'Generating CSR for one domain');
-
-    ok($le->generate_csr('odd.domain,another.domain,yet.another.domain') == OK, 'Generating CSR for multiple domains');
-
-    ok($le->csr, 'Retrieving generated CSR');
-
-    ok($le->csr_key(), 'Retrieving the key used for CSR');
-
-    print $fh $le->csr;
-    $fh->flush;
-    ok($le->load_csr($fh->filename) == OK, 'Reloading CSR');
-
-    # Try creating CSR with unsupported names, use already known usable key to speed up the process
-    ok($le->generate_csr('http://some.domain') == INVALID_DATA, 'Generating CSR for unsupported entity type (URI)');
-    ok($le->generate_csr('10.0.0.100') == INVALID_DATA, 'Generating CSR for unsupported entity type (IP)');
-    ok($le->generate_csr('a@b.c') == INVALID_DATA, 'Generating CSR for unsupported entity type (email)');
-    ok($le->generate_csr('abc') == INVALID_DATA, 'Generating CSR for unsupported entity type (dotless name)');
-    ok($le->generate_csr('*.domain.example') == INVALID_DATA, 'Generating CSR for unsupported entity type (wildcard)');
-
-    ok($le->generate_csr('odd.domain', KEY_RSA) == OK, 'Generating RSA-based CSR (default)');
-    ok($le->generate_csr('odd.domain', KEY_RSA, 1024) == INVALID_DATA, 'Generating RSA-based CSR (short key)');
-    ok($le->generate_csr('odd.domain', KEY_RSA, 2048) == OK, 'Generating RSA-based CSR (regular key)');
-    ok($le->generate_csr('odd.domain', KEY_RSA, 3000) == INVALID_DATA, 'Generating RSA-based CSR (odd key)');
-    ok($le->generate_csr('odd.domain', KEY_ECC) == INVALID_DATA, 'Generating ECC-based CSR (default)');
-    ok($le->generate_csr('odd.domain', KEY_ECC, 'test') == INVALID_DATA, 'Generating ECC-based CSR (odd curve)');
-
-}
+# Reset keys for ECC (curve check is runtime one)
+$le->load_csr_key(\"");
+$rv = $le->generate_csr('odd.domain', KEY_ECC);
+ok(($rv == OK or $rv == UNSUPPORTED), 'Generating ECC-based CSR (default)');
+$le->load_csr_key(\"");
+$rv = $le->generate_csr('odd.domain', KEY_ECC, 'test');
+ok(($rv == ERROR or $rv == UNSUPPORTED), 'Generating ECC-based CSR (odd curve)');
 
 diag( "Testing Crypt::LE $Crypt::LE::VERSION, Setup methods, $^X" );

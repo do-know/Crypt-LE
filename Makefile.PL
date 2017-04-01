@@ -3,39 +3,31 @@ require 5.006;
 use ExtUtils::MakeMaker;
 WriteMakefile
 (
-  'NAME' => 'Crypt::LE',
   'EXE_FILES' => [
                    'script/le.pl'
                  ],
-  'CONFIGURE' => \&conf,
-  'INSTALLDIRS' => 'site',
+  'PREREQ_PM' => {
+                   'Crypt::Format' => '0.02',
+                   'Crypt::OpenSSL::Bignum' => '0.06',
+                   'Test::More' => 0,
+                   'Scalar::Util' => 0,
+                   'MIME::Base64' => '3.11',
+                   'Time::Piece' => '1.27',
+                   'Net::SSLeay' => '1.49',
+                   'Module::Load' => '0.16',
+                   'HTTP::Tiny' => '0.042',
+                   'Encode' => 0,
+                   'Digest::SHA' => 0,
+                   'Log::Log4perl' => '1.27',
+                   'Convert::ASN1' => '0.2',
+                   'IO::Socket::SSL' => '1.42',
+                   'JSON::MaybeXS' => '1.003005',
+                   'Crypt::OpenSSL::RSA' => '0.28',
+                   'File::Temp' => 0
+                 },
   'PL_FILES' => {},
-  'PREREQ_PM' => {},
+  'NAME' => 'Crypt::LE',
+  'INSTALLDIRS' => 'site',
   'VERSION_FROM' => 'lib/Crypt/LE.pm'
 )
 ;
-
-sub conf {
-    my $base_build = {
-                   'Net::SSLeay' => '1.49',
-                   'Test::More' => 0,
-                   'IO::Socket::SSL' => '1.42',
-                   'Time::Piece' => '1.27',
-                   'Crypt::OpenSSL::RSA' => '0.28',
-                   'MIME::Base64' => '3.11',
-                   'Module::Load' => '0.16',
-                   'HTTP::Tiny' => '0.042',
-                   'Crypt::OpenSSL::PKCS10' => '0.15',
-                   'Log::Log4perl' => '1.27',
-                   'Crypt::OpenSSL::Bignum' => '0.06',
-                   'Crypt::PKCS10' => '1.5',
-                   'JSON::MaybeXS' => '1.003005',
-                   'Crypt::Format' => '0.02',
-                   'Digest::SHA' => 0,
-                   'Scalar::Util' => 0,
-                   'File::Temp' => 0,
-                 };
-    delete $base_build->{'Crypt::OpenSSL::PKCS10'} if $^O=~/^MSWin/;
-    return { 'PREREQ_PM' => $base_build };
-}
-

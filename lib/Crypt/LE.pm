@@ -4,7 +4,7 @@ use 5.006;
 use strict;
 use warnings;
 
-our $VERSION = '0.19';
+our $VERSION = '0.20';
 
 =head1 NAME
 
@@ -12,7 +12,7 @@ Crypt::LE - Let's Encrypt API interfacing module.
 
 =head1 VERSION
 
-Version 0.19
+Version 0.20
 
 =head1 SYNOPSIS
 
@@ -115,60 +115,59 @@ If you don't want to use error codes while checking whether the last called meth
 rule of thumb that on success it will return zero. You can also call error() or error_details() methods, which
 will be set with some values on error.
 
-=cut    
+=cut
 
 use Crypt::OpenSSL::RSA;
-use Crypt::PKCS10;
 use Crypt::Format;
 use JSON::MaybeXS;
 use HTTP::Tiny;
 use IO::File;
 use Digest::SHA 'sha256';
-use MIME::Base64 'encode_base64url';
+use MIME::Base64 qw<encode_base64url decode_base64url>;
+use Net::SSLeay qw<XN_FLAG_RFC2253 ASN1_STRFLGS_ESC_MSB MBSTRING_UTF8>;
 use Scalar::Util 'blessed';
+use Encode 'encode_utf8';
+use Convert::ASN1;
 use Data::Dumper;
 use base 'Exporter';
 
+Net::SSLeay::randomize();
+Net::SSLeay::load_error_strings();
+Net::SSLeay::ERR_load_crypto_strings();
+Net::SSLeay::OpenSSL_add_ssl_algorithms();
+Net::SSLeay::OpenSSL_add_all_digests();
 our $keysize = 4096;
-my $pkcs10_available = 0;
+our $keycurve = 'prime256v1';
 
-# At the moment, to make LE client self-sufficient (so there's no need to generate keys or CSR with openssl),
-# Crypt::OpenSSL::PKCS10 is offered as 'required' rather than 'recommended'. Depending on feedback it might
-# be moved to 'recommended' later, but the code will perform fine even without it. You will get a warning if
-# you try to generate a CSR and that module is not available.
+use constant {
+    OK                     => 0,
+    READ_ERROR             => 1,
+    LOAD_ERROR             => 2,
+    INVALID_DATA           => 3,
+    DATA_MISMATCH          => 4,
+    UNSUPPORTED            => 5,
+    ERROR                  => 500,
 
-eval "use Crypt::OpenSSL::PKCS10;";
-unless ($@) {
-    $pkcs10_available = 1;
-}
-Crypt::PKCS10->setAPIversion(1);
-Crypt::OpenSSL::RSA->import_random_seed();
+    SUCCESS                => 200,
+    CREATED                => 201,
+    ACCEPTED               => 202,
+    BAD_REQUEST            => 400,
+    AUTH_ERROR             => 403,
+    ALREADY_DONE           => 409,
 
-use constant OK                     => 0;
-use constant READ_ERROR             => 1;
-use constant LOAD_ERROR             => 2;
-use constant INVALID_DATA           => 3;
-use constant DATA_MISMATCH          => 4;
-use constant ERROR                  => 500;
+    KEY_RSA                => 0,
+    KEY_ECC                => 1,
 
-use constant SUCCESS                => 200;
-use constant CREATED                => 201;
-use constant ACCEPTED               => 202;
-use constant BAD_REQUEST            => 400;
-use constant AUTH_ERROR             => 403;
-use constant ALREADY_DONE           => 409;
+    SAN                    => '2.5.29.17',
+};
 
-use constant NID_subject_alt_name   => 85;
-
-use constant KEY_RSA                => 0;
-use constant KEY_ECC                => 1;
-
-our @EXPORT_OK = (qw<OK READ_ERROR LOAD_ERROR INVALID_DATA DATA_MISMATCH ERROR BAD_REQUEST AUTH_ERROR ALREADY_DONE KEY_RSA KEY_ECC>);
-our %EXPORT_TAGS = ( 'errors' => [ @EXPORT_OK[0..8] ], 'keys' => [ @EXPORT_OK[9..10] ] );
+our @EXPORT_OK = (qw<OK READ_ERROR LOAD_ERROR INVALID_DATA DATA_MISMATCH UNSUPPORTED ERROR BAD_REQUEST AUTH_ERROR ALREADY_DONE KEY_RSA KEY_ECC>);
+our %EXPORT_TAGS = ( 'errors' => [ @EXPORT_OK[0..9] ], 'keys' => [ @EXPORT_OK[10..11] ] );
 
 my $header = 'replay-nonce';
 my $j = JSON->new->canonical()->allow_nonref();
 my $url_safe = qr/^[-_A-Za-z0-9]+$/; # RFC 4648 section 5.
+my $flag_rfc22536_utf8 = (XN_FLAG_RFC2253) & (~ ASN1_STRFLGS_ESC_MSB);
 
 # https://github.com/letsencrypt/boulder/blob/master/core/good_key.go
 my @primes = map { Crypt::OpenSSL::Bignum->new_from_decimal($_) } (
@@ -185,6 +184,29 @@ my @primes = map { Crypt::OpenSSL::Bignum->new_from_decimal($_) } (
     643, 647, 653, 659, 661, 673, 677, 683, 691, 701, 709,
     719, 727, 733, 739, 743, 751
 );
+
+my $asn = Convert::ASN1->new();
+$asn->prepare(q<
+Extensions ::= SEQUENCE OF Extension
+Extension ::= SEQUENCE {
+    extnID          OBJECT IDENTIFIER,
+    critical        BOOLEAN OPTIONAL,
+    extnValue       OCTET STRING
+}
+SubjectAltName ::= GeneralNames
+GeneralNames ::= SEQUENCE OF GeneralName
+GeneralName ::= CHOICE {
+    otherName                       [0]     ANY,
+    rfc822Name                      [1]     IA5String,
+    dNSName                         [2]     IA5String,
+    x400Address                     [3]     ANY,
+    directoryName                   [4]     ANY,
+    ediPartyName                    [5]     ANY,
+    uniformResourceIdentifier       [6]     IA5String,
+    iPAddress                       [7]     OCTET STRING,
+    registeredID                    [8]     OBJECT IDENTIFIER
+}
+>);
 
 =head1 METHODS (API Setup)
 
@@ -271,8 +293,7 @@ Returns: OK | READ_ERROR | LOAD_ERROR | INVALID_DATA.
 =cut
 
 sub load_account_key {
-    my $self = shift;
-    my $file = shift;
+    my ($self, $file) = @_;
     $self->_reset_key;
     my $key = $self->_file($file);
     return $self->_status(READ_ERROR, "Key reading error.") unless $key;
@@ -280,7 +301,6 @@ sub load_account_key {
         $key = Crypt::OpenSSL::RSA->new_private_key($self->_convert($key, 'RSA PRIVATE KEY'));
     };
     return $self->_status(LOAD_ERROR, "Key loading error.") if $@;
-    return $self->_status(INVALID_DATA, "Key modulus is divisible by a small prime and will be rejected.") if $self->_is_divisible($key);
     return $self->_set_key($key, "Account key loaded.");
 }
 
@@ -294,8 +314,10 @@ Returns: OK | INVALID_DATA.
 
 sub generate_account_key {
     my $self = shift;
-    my $key = Crypt::OpenSSL::RSA->new_private_key(Crypt::OpenSSL::RSA->generate_key($keysize)->get_private_key_string);
-    return $self->_status(INVALID_DATA, "Key modulus is divisible by a small prime and will be rejected.") if $self->_is_divisible($key);
+    my ($pk, $err, $code) = _key();
+    return $self->_status(INVALID_DATA, $err||"Could not generate account key") unless $pk;
+    my $key = Crypt::OpenSSL::RSA->new_private_key(Net::SSLeay::PEM_get_string_PrivateKey($pk));
+    _free(k => $pk);
     return $self->_set_key($key, "Account key generated.");
 }
 
@@ -306,8 +328,7 @@ Returns: A previously loaded or generated private key in PEM format or undef.
 =cut
 
 sub account_key {
-    my $self = shift;
-    return $self->{key} ? $self->{key}->get_private_key_string : undef;
+    return shift->{pem};
 }
 
 =head2 load_csr($filename|$scalar_ref [, $domains])
@@ -325,16 +346,51 @@ sub load_csr {
     $self->_reset_csr;
     my $csr = $self->_file($file);
     return $self->_status(READ_ERROR, "CSR reading error.") unless $csr;
-    $csr = $self->_convert($csr, 'CERTIFICATE REQUEST');
-    my $decoded;
-    eval {
-        $decoded = Crypt::PKCS10->new($csr);
-    };
-    return $self->_status(LOAD_ERROR, "CSR loading error." . ($@ ? " $@" : "")) unless $decoded;
+    my $bio = Net::SSLeay::BIO_new(Net::SSLeay::BIO_s_mem());
+    return $self->_status(LOAD_ERROR, "Could not allocate memory for the CSR") unless $bio;
+    my ($in, $cn, $san, $i);
+    unless (Net::SSLeay::BIO_write($bio, $csr) and $in = Net::SSLeay::PEM_read_bio_X509_REQ($bio)) {
+        _free(b => $bio);
+        return $self->_status(LOAD_ERROR, "Could not load the CSR");
+    }
+    $cn = Net::SSLeay::X509_REQ_get_subject_name($in);
+    if ($cn) {
+        $cn = Net::SSLeay::X509_NAME_print_ex($cn, $flag_rfc22536_utf8, 1);
+        $cn=~s/^.*?\bCN=([^\s,]+).*$/$1/ if $cn;
+    }
+    my ($san_broken, %alt);
     my @list = @{$self->_get_list($domains)};
-    my $cn = $decoded->commonName;
-    my %alt = map {lc $_, undef} $decoded->subjectAltName('dNSName');
+    $i = Net::SSLeay::X509_REQ_get_attr_by_NID($in, &Net::SSLeay::NID_ext_req, -1);
+    if ($i > -1) {
+        my $o = Net::SSLeay::P_X509_REQ_get_attr($in, $i);
+        if ($o) {
+            my $exts = $asn->find("Extensions");
+            my $dec = $exts->decode(Net::SSLeay::P_ASN1_STRING_get($o));
+            if ($dec) {
+                foreach my $ext (@{$dec}) {
+                     if ($ext->{extnID} and $ext->{extnID} eq SAN) {
+                         $exts = $asn->find("SubjectAltName");
+                         $san = $exts->decode($ext->{extnValue});
+                         last;
+                     }
+                }
+            }
+        }
+    }
     $alt{lc $cn} = undef if $cn;
+    if ($san) {
+        foreach my $ext (@{$san}) {
+            if ($ext->{dNSName}) {
+                $alt{lc $ext->{dNSName}} = undef;
+            } else {
+                $san_broken++;
+            }
+        }
+    }
+    _free(b => $bio);
+    if ($san_broken) {
+        return $self->_status(INVALID_DATA, "CSR contains $san_broken non-DNS record(s) in SAN");
+    }
     unless (%alt) {
         return $self->_status(INVALID_DATA, "No domains found on CSR.");
     } else {
@@ -356,7 +412,7 @@ sub load_csr {
 =head2 generate_csr($domains, [$key_type], [$key_attr])
 
 Generates a new Certificate Signing Request. Optionally accepts key type and key attribute parameters, where key type should
-be either KEY_RSA or KEY_ECC (not yet supported) and key attribute is either the key size (for RSA) or the curve (for ECC).
+be either KEY_RSA or KEY_ECC (if supported on your system) and key attribute is either the key size (for RSA) or the curve (for ECC).
 By default an RSA key of 4096 bits will be used.
 Domains list is mandatory and can be given as a string of comma-separated names or as an array reference.
 
@@ -367,31 +423,18 @@ Returns: OK | ERROR | INVALID_DATA.
 sub generate_csr {
     my $self = shift;
     my ($domains, $key_type, $key_attr) = @_;
-    $key_type||=KEY_RSA;
-    $key_attr = $keysize if (!$key_attr and $key_type == KEY_RSA);
-    return $self->_status(INVALID_DATA, "Unsupported key type") unless ($key_type=~/^\d+$/ and $key_type <= KEY_RSA);
-    return $self->_status(INVALID_DATA, "Unsupported key size") if ($key_type == KEY_RSA and ($key_attr < 2048 or $key_attr%1024));
-    return $self->_status(ERROR, "To generate CSR you need Crypt::OpenSSL::PKCS10 module installed. Alternatively use https://get.zerossl.com/#csr to generate CSR online.") unless $pkcs10_available;
-    # NB: Crypt::OpenSSL::PKCS10 has its quirks, such as issues with DESTROY in PKCS10.xs and segfaults on an attempt 
-    # to read non-existent CSR from file. It should work for this particular task though.
     $self->_reset_csr;
     my @list = @{$self->_get_list($domains)};
     return $self->_status(INVALID_DATA, "No domains provided.") unless @list;
     if (my $odd = $self->_verify_list(\@list)) {
          return $self->_status(INVALID_DATA, "Unsupported domain names provided: " . join(", ", @{$odd}));
     }
-    my $rsa = $self->csr_key() ? Crypt::OpenSSL::RSA->new_private_key($self->csr_key()) : Crypt::OpenSSL::RSA->generate_key($key_attr);
-    $rsa->use_pkcs1_padding;
-    $rsa->use_sha256_hash;
-    my $csr = Crypt::OpenSSL::PKCS10->new_from_rsa($rsa);
-    $csr->set_subject("/CN=$list[0]");
-    if (@list > 1) {
-        $csr->add_ext(NID_subject_alt_name, join(",", map {"DNS:$_"} @list));
-        $csr->add_ext_final();
-    }
-    $csr->sign;
+    my ($key, $err, $code) = _key($self->csr_key(), $key_type, $key_attr);
+    return $self->_status($code||ERROR, $err||"Key problem while creating CSR") unless $key;
+    my ($csr, $csr_key) = _csr($key, \@list, { O => '-', L => '-', ST => '-', C => 'GB' });
+    return $self->_status(ERROR, "Unexpected CSR error.") unless $csr;
     my %loaded_domains = map {$_, undef} @list;
-    $self->_set_csr($csr->get_pem_req, $rsa->get_private_key_string, \%loaded_domains);
+    $self->_set_csr($csr, $csr_key, \%loaded_domains);
     return $self->_status(OK, "CSR generated.");
 }
 
@@ -409,7 +452,7 @@ sub csr {
 
 Loads the CSR key from the file or scalar (to be used for generating a new CSR).
 
-Returns: OK | READ_ERROR | LOAD_ERROR.
+Returns: OK | READ_ERROR.
 
 =cut
 
@@ -419,11 +462,6 @@ sub load_csr_key {
     undef $self->{csr_key};
     my $key = $self->_file($file);
     return $self->_status(READ_ERROR, "CSR key reading error.") unless $key;
-    eval {
-        $key = $self->_convert($key, 'RSA PRIVATE KEY');
-        Crypt::OpenSSL::RSA->new_private_key($key);
-    };
-    return $self->_status(LOAD_ERROR, "CSR key loading error.") if $@;
     $self->{csr_key} = $key;
     return $self->_status(OK, "CSR key loaded");
 }
@@ -487,17 +525,21 @@ sub set_domains {
 
 sub _reset_key {
     my $self = shift;
-    undef $self->{$_} for qw<key jwk fingerprint>;
+    undef $self->{$_} for qw<key_params key pem jwk fingerprint>;
 }
 
 sub _set_key {
     my $self = shift;
     my ($key, $msg) = @_;
-    return $self->_status(INVALID_DATA, "Key modulus is divisible by a small prime and will be rejected.") if (!$key or $self->_is_divisible($key));
+    my $pem = $key->get_private_key_string;
+    my ($n, $e) = $key->get_key_parameters;
+    return $self->_status(INVALID_DATA, "Key modulus is divisible by a small prime and will be rejected.") if $self->_is_divisible($n);
     $key->use_pkcs1_padding;
     $key->use_sha256_hash;
+    $self->{key_params} = { n => $n, e => $e };
     $self->{key} = $key;
-    $self->{jwk} = $self->_jwk($key);
+    $self->{pem} = $pem;
+    $self->{jwk} = $self->_jwk();
     $self->{fingerprint} = encode_base64url(sha256($j->encode($self->{jwk})));
     if ($self->{autodir}) {
         my $status = $self->directory;
@@ -507,11 +549,9 @@ sub _set_key {
 }
 
 sub _is_divisible {
-    my $self = shift;
-    my $key = shift;
-    my $n = ($key->get_key_parameters)[0];
-    my $ctx = Crypt::OpenSSL::Bignum::CTX->new();
+    my ($self, $n) = @_;
     my ($quotient, $remainder);
+    my $ctx = Crypt::OpenSSL::Bignum::CTX->new();
     foreach my $prime (@primes) {
         ($quotient, $remainder) = $n->div($prime, $ctx);
         return 1 if $remainder->is_zero;
@@ -1173,6 +1213,85 @@ sub error_details {
 }
 
 #====================================================================================================
+# Internal Crypto helpers
+#====================================================================================================
+
+sub _key {
+    my ($key, $type, $attr) = @_;
+    my $pk;
+    $type||=KEY_RSA;
+    return (undef, "Unsupported key type", INVALID_DATA) unless ($type=~/^\d+$/ and $type <= KEY_ECC);
+    if ($type == KEY_RSA) {
+        $attr||=$keysize;
+        return (undef, "Unsupported key size", INVALID_DATA) if ($attr < 2048 or $attr%1024);
+    } elsif ($type == KEY_ECC) {
+        $attr = $keycurve unless ($attr and $attr ne 'default');
+        return (undef, "Unsupported key type - upgrade Net::SSLeay to version 1.75 or better", UNSUPPORTED) unless defined &Net::SSLeay::EC_KEY_generate_key;
+    }
+    if ($key) {
+        my $bio = Net::SSLeay::BIO_new(Net::SSLeay::BIO_s_mem());
+        return (undef, "Could not allocate memory for the key") unless $bio;
+        return _free(b => $bio, error => "Could not load the key data") unless Net::SSLeay::BIO_write($bio, $key);
+        $pk = Net::SSLeay::PEM_read_bio_PrivateKey($bio);
+        _free(b => $bio);
+        return (undef, "Could not read the private key") unless $pk;
+    } else {
+        $pk = Net::SSLeay::EVP_PKEY_new();
+        return (undef, "Could not allocate memory for the key") unless $pk;
+        my $gen;
+        eval {
+            $gen = ($type == KEY_RSA) ? Net::SSLeay::RSA_generate_key($attr, &Net::SSLeay::RSA_F4) : Net::SSLeay::EC_KEY_generate_key($attr);
+        };
+        $@=~s/ at \S+ line \d+.$// if $@;
+        return _free(k => $pk, error => "Could not generate the private key '$attr'" . ($@ ? " - $@" : "")) unless $gen;
+        ($type == KEY_RSA) ? Net::SSLeay::EVP_PKEY_assign_RSA($pk, $gen) : Net::SSLeay::EVP_PKEY_assign_EC_KEY($pk, $gen);
+    }
+    return ($pk);
+}
+
+sub _csr {
+    my ($pk, $domains, $attrib) = @_;
+    my $ref = ref $domains;
+    return unless ($domains and (!$ref or $ref eq 'ARRAY'));
+    return if ($attrib and (ref $attrib ne 'HASH'));
+    my $req = Net::SSLeay::X509_REQ_new();
+    return _free(k => $pk) unless $req;
+    return _free(k => $pk, r => $req) unless (Net::SSLeay::X509_REQ_set_pubkey($req, $pk));
+    my @names = $ref ? @{$domains} : split(/\s*,\s*/, $domains);
+    $attrib->{CN} = $names[0] unless ($attrib and ($attrib->{CN} or $attrib->{commonName}));
+    my $list = join ',', map { 'DNS:' . encode_utf8($_) } @names;
+    return _free(k => $pk, r => $req) unless Net::SSLeay::P_X509_REQ_add_extensions($req, &Net::SSLeay::NID_subject_alt_name => $list);
+    my $n = Net::SSLeay::X509_NAME_new();
+    return _free(k => $pk, r => $req) unless $n;
+    foreach my $key (keys %{$attrib}) {
+         # Can use long or short names
+         return _free(k => $pk, r => $req) unless Net::SSLeay::X509_NAME_add_entry_by_txt($n, $key, MBSTRING_UTF8, encode_utf8($attrib->{$key}));
+    }
+    return _free(k => $pk, r => $req) unless Net::SSLeay::X509_REQ_set_subject_name($req, $n);
+    my $md = Net::SSLeay::EVP_get_digestbyname('sha256');
+    return _free(k => $pk, r => $req) unless ($md and Net::SSLeay::X509_REQ_sign($req, $pk, $md));
+    my @rv = (Net::SSLeay::PEM_get_string_X509_REQ($req), Net::SSLeay::PEM_get_string_PrivateKey($pk));
+    _free(k => $pk, r => $req);
+    return @rv;
+}
+
+sub _free {
+    my %data = @_;
+    Net::SSLeay::X509_REQ_free($data{r}) if $data{r};
+    Net::SSLeay::BIO_free($data{b}) if $data{b};
+    Net::SSLeay::EVP_PKEY_free($data{k}) if $data{k};
+    return wantarray ? (undef, $data{'error'}) : undef;
+}
+
+sub _to_hex {
+    my $val = shift;
+    $val = $val->to_hex;
+    $val =~s/^0x//;
+    $val = "0$val" if length($val) % 2;
+    return $val;
+}
+
+#====================================================================================================
 # Internal Service helpers
 #====================================================================================================
 
@@ -1199,17 +1318,11 @@ sub _request {
 
 sub _jwk {
     my $self = shift;
-    my $key = shift;
-    return unless $key;
-    my ($n, $e) = $key->get_key_parameters;
-    for ($n, $e) {
-      $_ = $_->to_hex;
-      $_ = "0$_" if length($_) % 2;
-    }
+    return unless $self->{key_params};
     return {
         kty => "RSA",
-        n   => encode_base64url(pack("H*", $n)),
-        e   => encode_base64url(pack("H*", $e)),
+        n   => encode_base64url(pack("H*", _to_hex($self->{key_params}->{n}))),
+        e   => encode_base64url(pack("H*", _to_hex($self->{key_params}->{e}))),
     };
 }
 
@@ -1296,6 +1409,8 @@ sub _convert {
     my ($content, $type) = @_;
     return (!$content or $content=~/^\-+BEGIN/) ? $content : Crypt::Format::der2pem($content, $type);
 }
+
+1;
 
 =head1 AUTHOR
 
@@ -1395,4 +1510,3 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 =cut
 
-1;

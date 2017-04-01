@@ -1,5 +1,15 @@
 Revision history for Crypt-LE
 
+0.20    01 April 2017
+        - CSRs can now be generated on Windows.
+        - ECC is now supported (as long as you have Net:SSLeay version 1.75 or better).
+        - Keys are now generated using Net::SSLeay, Crypt::OpenSSL::RSA is only used for utility purposes and might be removed later.
+        - Main le.pl script accepts a new parameter 'curve' for EC keys, you can use 'default' as a value for 'prime256v1'.
+        - Mail le.pl script accepts a new parameter 'issue-code' to set specified exit code on certificate issuance/renewal.
+        - Main le.pl script will exit with code 255 on error, 0 otherwise.
+        - Dropped non-portable Crypt::OpenSSL::PKCS10 dependency.
+        - Removed Crypt:::PKCS10 dependency.
+
 0.19    16 October 2016
         - Legacy option (--legacy) is now supported (for AWS services, old Apache versions, some Control Panels and specific
           devices). In this mode domain keys are generated with 2048 bits instead of 4096 and certificate file only contains
