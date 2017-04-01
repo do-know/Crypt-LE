@@ -1,6 +1,6 @@
 # Crypt-LE
 
-This module provides the functionality necessary to use Let's Encrypt API and generate free SSL certificates for your domains. It can also be used to generate private RSA keys or Certificate Signing Requests without resorting to openssl command line. Crypt::LE is shipped with a self-sufficient client for obtaining SSL certificates - `le.pl`. 
+This module provides the functionality necessary to use Let's Encrypt API and generate free SSL certificates for your domains. It can also be used to generate private RSA (_and from version 0.20 also ECC_) keys or Certificate Signing Requests without resorting to openssl command line. Crypt::LE is shipped with a self-sufficient client for obtaining SSL certificates - `le.pl`.
 
 > The client + library package is codenamed ZeroSSL with the project homepage at https://ZeroSSL.com
 
@@ -9,6 +9,8 @@ This module provides the functionality necessary to use Let's Encrypt API and ge
 ### COMPATIBILITY
 
 The code has been successfully tested on more than 300 combinations of OS and Perl versions. It should install and run fine on Linux, FreeBSD, NetBSD, etc. It also works on Mac OS X and Windows (tested with ActiveState and Strawberry Perl). You can find appropriate PPMs at [ActiveState](https://code.activestate.com/ppm/Crypt-LE/). Please note that pure Windows environments are supported starting from version 0.17 of the module. If you are using Cygwin, then earlier versions would work too.
+
+**In addition, if you are able to run docker containers, you can pull the latest client image from https://hub.docker.com/r/zerossl/client/. Docker image is lightweight and the client is run as a non-privileged user in a container.**
 
 ### REQUIREMENTS
 
@@ -135,7 +137,7 @@ You can also contribute the completion-handling modules under Crypt::LE::Complet
 
 ### LICENSE AND COPYRIGHT
 
-Copyright (C) 2016 Alexander Yezhov
+Copyright (C) 2016-2017 Alexander Yezhov
 
 This program is free software; you can redistribute it and/or modify it
 under the terms of the the Artistic License (2.0). You may obtain a
