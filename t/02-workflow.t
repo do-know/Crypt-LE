@@ -3,7 +3,6 @@ use 5.006;
 use strict;
 use warnings;
 use Test::More;
-use File::Temp ();
 use Crypt::LE ':errors';
 $|=1;
 plan tests => 14;
@@ -33,12 +32,14 @@ SKIP: {
     # registrations, so just making sure that interaction works.
 
     # Account for the fact that some test boxes return 'Network is unreachable' and that staging API might be down.
-    my $rv = ($le->directory() == OK or $le->error_details=~/(?:\bunreachable\b|<HTML>)/i) ? 1 : 0;
+    my $rv = ($le->directory() == OK or $le->error_details=~/(?:\bunreachable\b|<HTML>|\btimed?\b)/i) ? 1 : 0;
     ok($rv == 1, 'Loading resources directory ' . $le->error_details);
 
 }
 
-$le->{'domains'} = { 'x.dom' => undef, 'y.dom' => 0, 'z.dom' => 1 };
+$le->set_domains('x.dom, y.dom, z.dom');
+$le->{'domains'}->{'y.dom'} = 0;
+$le->{'domains'}->{'z.dom'} = 1;
 $le->{'failed_domains'} = [ [ qw<a.dom b.dom> ], undef ];
 
 ok(@{$le->domains()} == 3, 'Checking the domains list');

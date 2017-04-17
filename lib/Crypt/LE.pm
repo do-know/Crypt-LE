@@ -4,15 +4,15 @@ use 5.006;
 use strict;
 use warnings;
 
-our $VERSION = '0.20';
+our $VERSION = '0.21';
 
 =head1 NAME
 
-Crypt::LE - Let's Encrypt API interfacing module.
+Crypt::LE - Let's Encrypt API interfacing module and client.
 
 =head1 VERSION
 
-Version 0.20
+Version 0.21
 
 =head1 SYNOPSIS
 
@@ -356,9 +356,8 @@ sub load_csr {
     $cn = Net::SSLeay::X509_REQ_get_subject_name($in);
     if ($cn) {
         $cn = Net::SSLeay::X509_NAME_print_ex($cn, $flag_rfc22536_utf8, 1);
-        $cn=~s/^.*?\bCN=([^\s,]+).*$/$1/ if $cn;
+        $cn = lc($1) if ($cn and $cn=~/^.*?\bCN=([^\s,]+).*$/);
     }
-    my ($san_broken, %alt);
     my @list = @{$self->_get_list($domains)};
     $i = Net::SSLeay::X509_REQ_get_attr_by_NID($in, &Net::SSLeay::NID_ext_req, -1);
     if ($i > -1) {
@@ -377,11 +376,18 @@ sub load_csr {
             }
         }
     }
-    $alt{lc $cn} = undef if $cn;
+    my @loaded_domains = ();
+    my %seen = ();
+    my $san_broken;
+    if ($cn) {
+        push @loaded_domains, $cn;
+        $seen{$cn} = 1;
+    }
     if ($san) {
         foreach my $ext (@{$san}) {
             if ($ext->{dNSName}) {
-                $alt{lc $ext->{dNSName}} = undef;
+                $cn = lc($ext->{dNSName});
+                push @loaded_domains, $cn unless $seen{$cn}++;
             } else {
                 $san_broken++;
             }
@@ -391,21 +397,19 @@ sub load_csr {
     if ($san_broken) {
         return $self->_status(INVALID_DATA, "CSR contains $san_broken non-DNS record(s) in SAN");
     }
-    unless (%alt) {
+    unless (@loaded_domains) {
         return $self->_status(INVALID_DATA, "No domains found on CSR.");
     } else {
-        my @list = sort keys %alt;
-        if (my $odd = $self->_verify_list(\@list)) {
+        if (my $odd = $self->_verify_list(\@loaded_domains)) {
              return $self->_status(INVALID_DATA, "Unsupported domain names on CSR: " . join(", ", @{$odd}));
         }
-        $self->_debug("Loaded domain names from CSR: " . join(', ', @list));
+        $self->_debug("Loaded domain names from CSR: " . join(', ', @loaded_domains));
     }
-    if (my %loaded_domains = map {$_, undef} @list) {
-        unless (join(',', sort keys %loaded_domains) eq join(',', sort keys %alt)) {
-            return $self->_status(DATA_MISMATCH, "The list of provided domains does not match the one on the CSR.");
-        }
+    if (@list) {
+        return $self->_status(DATA_MISMATCH, "The list of provided domains does not match the one on the CSR.") unless (join(',', sort @loaded_domains) eq join(',', sort @list));
+        @loaded_domains = @list; # Use the command line domain order if those were listed along with CSR.
     }
-    $self->_set_csr($csr, undef, \%alt);
+    $self->_set_csr($csr, undef, \@loaded_domains);
     return $self->_status(OK, "CSR loaded.");
 }
 
@@ -433,8 +437,7 @@ sub generate_csr {
     return $self->_status($code||ERROR, $err||"Key problem while creating CSR") unless $key;
     my ($csr, $csr_key) = _csr($key, \@list, { O => '-', L => '-', ST => '-', C => 'GB' });
     return $self->_status(ERROR, "Unexpected CSR error.") unless $csr;
-    my %loaded_domains = map {$_, undef} @list;
-    $self->_set_csr($csr, $csr_key, \%loaded_domains);
+    $self->_set_csr($csr, $csr_key, \@list);
     return $self->_status(OK, "CSR generated.");
 }
 
@@ -514,6 +517,7 @@ sub set_domains {
     if (my $odd = $self->_verify_list(\@list)) {
          return $self->_status(INVALID_DATA, "Unsupported domain names provided: " . join(", ", @{$odd}));
     }
+    $self->{loaded_domains} = \@list;
     my %loaded_domains = map {$_, undef} @list;
     $self->{domains} = \%loaded_domains;
     return $self->_status(OK, "Domains list is set");
@@ -561,7 +565,7 @@ sub _is_divisible {
 
 sub _reset_csr {
     my $self = shift;
-    undef $self->{$_} for qw<domains csr>;
+    undef $self->{$_} for qw<domains loaded_domains csr>;
 }
 
 sub _set_csr {
@@ -569,7 +573,9 @@ sub _set_csr {
     my ($csr, $pk, $domains) = @_;
     $self->{csr} = $csr;
     $self->{csr_key} = $pk;
-    $self->{domains} = $domains;
+    my %loaded_domains = map {$_, undef} @{$domains};
+    $self->{loaded_domains} = $domains;
+    $self->{domains} = \%loaded_domains;
 }
 
 sub _get_list {
@@ -579,7 +585,7 @@ sub _get_list {
 
 sub _verify_list {
     my ($self, $list) = @_;
-    my @odd = grep { /[\[\{\(\<\*\@\>\)\}\]\/\\:]/ or /^[\d\.]+$/ or !/\./ } @{$list};
+    my @odd = grep { /[\s\[\{\(\<\*\@\>\)\}\]\/\\:]/ or /^[\d\.]+$/ or !/\./ } @{$list};
     return @odd ? \@odd : undef;
 }
 
@@ -1143,13 +1149,12 @@ sub issuer_url {
 
 =head2 domains()
 
-Returns: An array reference to the domain names loaded from CSR or undef.
+Returns: An array reference to the loaded domain names or undef.
 
 =cut
 
 sub domains {
-    my $self = shift;
-    return $self->{domains} ? [ sort keys %{$self->{domains}} ] : undef;
+    return shift->{loaded_domains};
 }
 
 =head2 failed_domains([$all])

@@ -6,7 +6,7 @@ use Test::More;
 use File::Temp ();
 use Crypt::LE ':errors', ':keys';
 $|=1;
-plan tests => 46;
+plan tests => 53;
 
 my $le = Crypt::LE->new(autodir => 0);
 my $usable_csr = <<EOF;
@@ -91,6 +91,7 @@ ok($le->load_account_key($fh->filename) == OK, "Reloading account key");
 my ($usable_key, $invalid_key) = ($le->account_key, '123456789');
 ok($le->load_account_key(\$usable_key) == OK, 'Setting a valid key from scalar');
 ok($le->load_account_key(\$invalid_key) == LOAD_ERROR, 'Setting an invalid key from scalar');
+$fh->close;
 
 $fh = File::Temp->new(SUFFIX => '.le', UNLINK => 1, EXLOCK => 0);
 
@@ -114,7 +115,15 @@ ok($le->csr_key(), 'Retrieving the key used for CSR');
 
 print $fh $le->csr;
 $fh->flush;
-ok($le->load_csr($fh->filename) == OK, 'Reloading CSR');
+ok($le->load_csr($fh->filename) == OK, 'Reloading CSR without domains listed');
+ok(join(',', @{$le->domains}) eq 'odd.domain,another.domain,yet.another.domain', 'Checking domain names order when those were NOT explicitly provided.');
+ok($le->load_csr($fh->filename, 'odd.domain,another.domain,yet.another.domain') == OK, 'Reloading CSR with matching domains listed in the same order');
+ok($le->load_csr($fh->filename, 'another.domain,yet.another.domain,odd.domain') == OK, 'Reloading CSR with matching domains listed in the different order');
+ok(join(',', @{$le->domains}) eq 'another.domain,yet.another.domain,odd.domain', 'Checking domain names order when those were explicitly provided.');
+ok($le->load_csr($fh->filename, 'another.domain,yet.another.domain') == DATA_MISMATCH, 'Reloading CSR with fewer domains listed');
+ok($le->load_csr($fh->filename, 'odd.domain,another.odd.domain,another.domain,yet.another.domain') == DATA_MISMATCH, 'Reloading CSR with more domains listed');
+ok(!defined $le->domains, 'Checking domain names reset on error.');
+$fh->close;
 
 # Try creating CSR with unsupported names, use already known usable key to speed up the process
 ok($le->generate_csr('http://some.domain') == INVALID_DATA, 'Generating CSR for unsupported entity type (URI)');

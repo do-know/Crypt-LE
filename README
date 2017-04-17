@@ -4,6 +4,16 @@ The Crypt::LE module provides the functionality necessary to use Let's Encrypt A
 certificates for your domains. It can also be used to generate private RSA (and from version 0.20 also ECC)
 keys or Certificate Signing Requests without resorting to openssl command line.
 
+COMPATIBILITY
+
+The code has been successfully tested on more than 500 combinations of OS and Perl versions. It should install
+and run fine on Linux, FreeBSD, NetBSD, etc. It also works on Mac OS X and Windows (tested with ActiveState and
+Strawberry Perl).
+
+In addition, if you are able to run docker containers, you can pull the latest client image from
+https://hub.docker.com/r/zerossl/client/. Docker image is lightweight and the client is run as a non-privileged
+user in a container.
+
 REQUIREMENTS
 
 LINUX: There are just 3 essential things which should be in place for the package to be successfully installed:

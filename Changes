@@ -1,5 +1,12 @@
 Revision history for Crypt-LE
 
+0.21    17 April 2017
+        - Multi-webroot support added (for multiple domains on the same certificate having different webroots).
+        - Renew expiration date check should now also work with old libraries not reporting certificate depth.
+        - Domains method should now return loaded domains in the same order as those were provided rather than sorted.
+        - Help output from the client is narrowed down to fit small screens like Windows console better.
+        - Minor documentation changes.
+
 0.20    01 April 2017
         - CSRs can now be generated on Windows.
         - ECC is now supported (as long as you have Net:SSLeay version 1.75 or better).

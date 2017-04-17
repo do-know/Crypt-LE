@@ -11,8 +11,9 @@ use Time::Seconds;
 use Log::Log4perl;
 use Module::Load;
 use Crypt::LE ':errors', ':keys';
+use utf8;
 
-my $VERSION = '0.20';
+my $VERSION = '0.21';
 
 use constant PEER_CRT  => 4;
 use constant CRT_DEPTH => 5;
@@ -67,7 +68,9 @@ sub work {
     if (-r $opt->{'csr'}) {
         $opt->{'logger'}->info("Loading a CSR from $opt->{'csr'}");
         $le->load_csr($opt->{'csr'}, $opt->{'domains'}) == OK or return _error("Could not load a CSR: " . $le->error_details);
+        return _error("For multi-webroot path usage, the amount of paths given should match the amount of domain names listed.") if _path_mismatch($le, $opt);
     } else {
+        return _error("For multi-webroot path usage, the amount of paths given should match the amount of domain names listed.") if _path_mismatch($le, $opt);
         $opt->{'logger'}->info("Generating a new CSR for domains $opt->{'domains'}");
         if (-e $opt->{'csr-key'}) {
              # Allow using pre-existing key when generating CSR
@@ -89,25 +92,21 @@ sub work {
     return if $opt->{'generate-only'};
 
     if ($opt->{'renew'}) {
-        my $rv = 1;
         if ($opt->{'crt'} and -r $opt->{'crt'}) {
             $opt->{'logger'}->info("Checking certificate for expiration (local file).");
-            $rv = verify_crt_file($opt);
-            $opt->{'logger'}->warn("Problem checking existing certificate file: $rv") if $rv;
+            verify_crt_file($opt);
+            $opt->{'logger'}->warn("Problem checking existing certificate file.") unless (defined $opt->{'expires'});
         }
-        if ($rv) {
+        unless (defined $opt->{'expires'}) {
             $opt->{'logger'}->info("Checking certificate for expiration (website connection).");
             my $probe = HTTP::Tiny->new( agent => "Mozilla/5.0 (compatible; ZeroSSL Crypt::LE v$VERSION renewal agent; https://ZeroSSL.com/)", verify_SSL => 1, timeout => 10, SSL_options => { SSL_verify_callback => verify_crt($opt) } );
             foreach my $domain (@{$le->domains}) {
                 $opt->{'logger'}->info("Checking $domain");
                 $probe->head("https://$domain/");
-                if (defined $opt->{'expires'}) {
-                    $rv = 0;
-                    last;
-                }
+                last if (defined $opt->{'expires'});
             }
         }
-        return _error("Could not get the certificate expiration value, cannot renew.") if $rv;
+        return _error("Could not get the certificate expiration value, cannot renew.") unless (defined $opt->{'expires'});
         if ($opt->{'expires'} > $opt->{'renew'}) {
             $opt->{'logger'}->info("Too early for renewal, certificate expires in $opt->{'expires'} days.");
             return;
@@ -132,6 +131,8 @@ sub work {
     } else {
         # If it's not an auth problem, but blacklisted domains for example - stop.
         return _error("Error requesting certificate: " . $le->error_details) if $new_crt_status != AUTH_ERROR;
+        # Add multi-webroot option to parameters passed if it is set.
+        $opt->{'handle-params'}->{'multiroot'} = $opt->{'multiroot'} if $opt->{'multiroot'};
         return _error($le->error_details) if $le->request_challenge();
         return _error($le->error_details) if $le->accept_challenge($opt->{'handler'} || \&process_challenge, $opt->{'handle-params'}, $opt->{'handle-as'});
         return _error($le->error_details) if $le->verify_challenge($opt->{'handler'} || \&process_verification, $opt->{'handle-params'}, $opt->{'handle-as'});
@@ -159,6 +160,8 @@ sub work {
         }
     }
     if ($opt->{'complete-handler'}) {
+        # Add multi-webroot option to parameters passed if it is set.
+        $opt->{'complete-params'}->{'multiroot'} = $opt->{'multiroot'} if $opt->{'multiroot'};
         my $data = {
             # Note, certificate here is just a domain certificate, issuer is passed separately - so handler could merge those or use them separately as well.
             certificate => $le->certificate, certificate_file => $opt->{'crt'}, key_file => $opt->{'csr-key'}, issuer => $le->issuer, 
@@ -166,7 +169,7 @@ sub work {
         };
         my $rv;
         eval {
-        $rv = $opt->{'complete-handler'}->complete($data, $opt->{'complete-params'});
+            $rv = $opt->{'complete-handler'}->complete($data, $opt->{'complete-params'});
         };
         if ($@ or !$rv) {
             return _error("Completion handler " . ($@ ? "thrown an error: $@" : "did not return a true value"));
@@ -183,10 +186,10 @@ sub parse_options {
     my $args = @ARGV;
     
     GetOptions ($opt, 'key=s', 'csr=s', 'csr-key=s', 'domains=s', 'path=s', 'crt=s', 'email=s', 'curve=s', 'renew=i',
-            'issue-code=i', 'handle-with=s', 'handle-as=s', 'handle-params=s', 'complete-with=s', 'complete-params=s', 'log-config=s',
-            'generate-missing', 'generate-only', 'revoke', 'legacy', 'unlink', 'live', 'debug', 'help') || return _error("Use --help to see the usage examples.");
-            
-    usage_and_exit() unless ($args and !$opt->{'help'});
+        'issue-code=i', 'handle-with=s', 'handle-as=s', 'handle-params=s', 'complete-with=s', 'complete-params=s', 'log-config=s',
+        'generate-missing', 'generate-only', 'revoke', 'legacy', 'unlink', 'live', 'debug', 'help') || return _error("Use --help to see the usage examples.");
+
+    usage_and_exit($opt) unless ($args and !$opt->{'help'});
     my $rv = reconfigure_log($opt);
     return $rv if $rv;
 
@@ -217,7 +220,11 @@ sub parse_options {
         }
 
         if ($opt->{'path'}) {
-            return _error("Path to save challenge files into should be a writable directory.") unless (-d $opt->{'path'} and -w _);
+            my @non_writable = ();
+            foreach my $path (grep { $_ } split /\s*,\s*/, $opt->{'path'}) {
+                push @non_writable, $path unless (-d $path and -w _);
+            }
+            return _error("Path to save challenge files into should be a writable directory for: " . join(', ', @non_writable)) if @non_writable;
         } elsif ($opt->{'unlink'}) {
             return _error("Unlink option will have no effect without --path.");
         }
@@ -254,12 +261,6 @@ sub parse_options {
     return;
 }
 
-sub usage_and_exit {
-    local $/;
-    print <DATA>;
-    exit(1);
-}
-
 sub reconfigure_log {
     my $opt = shift;
     if ($opt->{'log-config'}) {
@@ -273,6 +274,20 @@ sub reconfigure_log {
         $opt->{logger} = Log::Log4perl->get_logger();
     }
     return;
+}
+
+sub _path_mismatch {
+    my ($le, $opt) = @_;
+    if ($opt->{'path'} and my $domains = $le->domains) {
+        my @paths = grep {$_} split /\s*,\s*/, $opt->{'path'};
+        if (@paths > 1) {
+            return 1 unless @{$domains} == @paths;
+            for (my $i = 0; $i <= $#paths; $i++) {
+                $opt->{'multiroot'}->{$domains->[$i]} = $paths[$i];
+            }
+        }
+    }
+    return 0;
 }
 
 sub _load_params {
@@ -320,17 +335,17 @@ sub _error {
 sub verify_crt {
     my $opt = shift;
     return sub {
-        my @crt = @_;
-        unless ($crt[CRT_DEPTH]) {
+        unless (defined $_[CRT_DEPTH] and $_[CRT_DEPTH]) {
             my ($t, $s);
             eval {
-                $t = Net::SSLeay::X509_get_notAfter($crt[PEER_CRT]);
+                $t = Net::SSLeay::X509_get_notAfter($_[PEER_CRT]);
                 $t = Time::Piece->strptime(Net::SSLeay::P_ASN1_TIME_get_isotime($t), "%Y-%m-%dT%H:%M:%SZ");
             };
-            return $@ if $@;
-            $s = $t - localtime;
-            $opt->{'expires'} = int($s->days);
-            return 0;
+            unless ($@) {
+                $s = $t - localtime;
+                $s = int($s->days);
+                $opt->{'expires'} = $s unless ($opt->{'expires'} and $s > $opt->{'expires'});
+            }
         }
     };
 }
@@ -347,15 +362,20 @@ sub process_challenge {
     my ($challenge, $params) = @_;
     my $text = "$challenge->{token}.$challenge->{fingerprint}";
     if ($params->{'path'}) {
-        my $file = "$params->{'path'}/$challenge->{token}";
+        my $path = $params->{'multiroot'} ? $params->{'multiroot'}->{$challenge->{domain}} : $params->{'path'};
+        unless ($path) {
+            $params->{'logger'}->error("Could not find the path for domain '$challenge->{domain}' to save the challenge file into.");
+            return 0;
+        }
+        my $file = "$path/$challenge->{token}";
         if (-e $file) {
            $params->{'logger'}->error("File already exists - this should not be the case, please move it or remove it.");
            return 0;
         }
-    if (_write($file, $text)) {
-       $params->{'logger'}->error("Failed to save a challenge file '$file' for domain '$challenge->{domain}'");
+        if (_write($file, $text)) {
+           $params->{'logger'}->error("Failed to save a challenge file '$file' for domain '$challenge->{domain}'");
            return 0;
-    } else {
+        } else {
            $params->{'logger'}->info("Successfully saved a challenge file '$file' for domain '$challenge->{domain}'");
            return 1;
         }
@@ -376,12 +396,21 @@ sub process_verification {
     } else {
         $params->{'logger'}->error("Domain verification results for '$results->{domain}': error. " . $results->{'error'});
     }
-    my $file = $params->{'path'} ? "$params->{'path'}/$results->{token}" : $results->{token};
+    my $path = $params->{'multiroot'} ? $params->{'multiroot'}->{$results->{domain}} : $params->{'path'};
+    my $file = $path ? "$path/$results->{token}" : $results->{token};
     if ($params->{'unlink'}) {
-        if (unlink $file) {
-            $params->{'logger'}->info("Challenge file '$file' has been deleted.");
+        unless ($path) {
+            $params->{'logger'}->error("Could not find the path for domain '$results->{domain}' - you may need to find and remove file named '$results->{token}' manually.");
         } else {
-            $params->{'logger'}->error("Could not delete the challenge file '$file', you may need to do it manually.");
+            if (-e $file) {
+                if (unlink $file) {
+                    $params->{'logger'}->info("Challenge file '$file' has been deleted.");
+                } else {
+                    $params->{'logger'}->error("Could not delete the challenge file '$file', you may need to do it manually.");
+                }
+            } else {
+                $params->{'logger'}->error("Could not find the challenge file '$file' to delete, it might have been already removed.");
+            }
         }
     } else {
         $params->{'logger'}->info("You can now delete the '$file' file.");
@@ -389,75 +418,106 @@ sub process_verification {
     1;
 }
 
-__END__
-
- ZeroSSL Crypt::LE client v0.20
-
+sub usage_and_exit {
+    my $opt = shift;
+    print "\n ZeroSSL Crypt::LE client v0.21\n\n";
+    if ($opt->{'help'}) {
+        print << 'EOF';
  ===============
  USAGE EXAMPLES: 
  ===============
 
 a) To register (if needed) and issue a certificate:
 
-   le.pl --key account.key --email "my@email.address" --csr domain.csr --csr-key domain.key --crt domain.crt --domains "www.domain.ext,domain.ext" \\
-         --generate-missing
+ le.pl --key account.key --email "my@email.address" --csr domain.csr
+       --csr-key domain.key --crt domain.crt --generate-missing
+       --domains "www.domain.ext,domain.ext"
 
-   Please note that email is only used for the initial registration and cannot be changed later. Even though it is optional,
-   you may want to have your email registered to receive certificate expiration notifications and be able to recover your
-   account in the future if needed.
+Please note that email is only used for the initial registration and
+cannot be changed later. Even though it is optional, you may want to
+have your email registered to receive certificate expiration notifications
+and be able to recover your account in the future if needed.
 
-b) To have challenge files automatically placed into your web directory before the verification and then removed after the verification:
+b) To have challenge files automatically placed into your web directory
+   before the verification and then removed after the verification:
 
-   le.pl --key account.key --csr domain.csr --csr-key domain.key --crt domain.crt --domains "www.domain.ext,domain.ext" --generate-missing \\
-         --path /some/path/.well-known/acme-challenge --unlink
+ le.pl --key account.key --csr domain.csr --csr-key domain.key --crt domain.crt
+       --domains "www.domain.ext,domain.ext" --generate-missing --unlink
+       --path /some/path/.well-known/acme-challenge
 
-c) To use external modules to handle challenges and process completion while getting a certificate:
+If www.domain.ext and domain.ext use different "webroots", you can specify
+those in --path parameter, as a comma-separated list as follows:
 
-   le.pl --key account.key --csr domain.csr --csr-key domain.key --crt domain.crt --domains "www.domain.ext,domain.ext" --generate-missing \\
-         --handle-with Crypt::LE::Challenge::Simple --complete-with Crypt::LE::Complete::Simple
+ le.pl --key account.key --csr domain.csr --csr-key domain.key --crt domain.crt
+       --domains "www.domain.ext,domain.ext" --generate-missing --unlink
+       --path /a/.well-known/acme-challenge,/b/.well-known/acme-challenge
 
-   - See provided Crypt::LE::Challenge::Simple for an example of a challenge-handling module.
-   - See provided Crypt::LE::Complete::Simple for an example of a completion-handling module.
+Please note that with multiple webroots specified, the amount of those should
+match the amount of domains listed. They will be used in the same order as
+the domains given and all of those folders should be writable.
 
-d) To pass parameters to external modules as JSON either directly or by specifying a file name:
+c) To use external modules to handle challenges and process completion
+   while getting a certificate:
 
-   le.pl --key account.key --csr domain.csr --csr-key domain.key --crt domain.crt --domains "www.domain.ext,domain.ext" --generate-missing \\
-         --handle-with Crypt::LE::Challenge::Simple --complete-with Crypt::LE::Complete::Simple \\
-         --handle-params '{"key1": 1, "key2": 2, "key3": "something"}' --complete-params complete.json
+ le.pl --key account.key --csr domain.csr --csr-key domain.key --crt domain.crt
+       --domains "www.domain.ext,domain.ext" --generate-missing
+       --handle-with Crypt::LE::Challenge::Simple
+       --complete-with Crypt::LE::Complete::Simple
+
+   - See Crypt::LE::Challenge::Simple for an example of a challenge module.
+   - See Crypt::LE::Complete::Simple for an example of a completion module.
+
+d) To pass parameters to external modules as JSON either directly or by
+   specifying a file name:
+
+ le.pl --key account.key --csr domain.csr --csr-key domain.key --crt domain.crt
+       --domains "www.domain.ext,domain.ext" --generate-missing
+       --handle-with Crypt::LE::Challenge::Simple
+       --complete-with Crypt::LE::Complete::Simple
+       --handle-params '{"key1": 1, "key2": 2, "key3": "something"}'
+       --complete-params complete.json
          
 e) To use basic DNS verification:
 
-   le.pl --key account.key --csr domain.csr --csr-key domain.key --crt domain.crt --domains "www.domain.ext,domain.ext" --generate-missing \\
-         --handle-as dns --handle-with Crypt::LE::Challenge::Simple
+ le.pl --key account.key --csr domain.csr --csr-key domain.key --crt domain.crt
+       --domains "www.domain.ext,domain.ext" --generate-missing --handle-as dns
+       --handle-with Crypt::LE::Challenge::Simple
 
 f) To just generate the keys and CSR:
 
-   le.pl  --key account.key --csr domain.csr --csr-key domain.key --domains "www.domain.ext,domain.ext" --generate-missing --generate-only
+ le.pl --key account.key --csr domain.csr --csr-key domain.key
+       --domains "www.domain.ext,domain.ext" --generate-missing
+       --generate-only
 
 g) To revoke a certificate:
 
-   le.pl --key account.key --crt domain.crt --revoke
+ le.pl --key account.key --crt domain.crt --revoke
 
  ===============
  RENEWAL PROCESS
  ===============
 
-To RENEW your existing certificate: use the same command line as you used for issuing the certificate, with one additional parameter
+To RENEW your existing certificate: use the same command line as you used
+for issuing the certificate, with one additional parameter:
    
-   --renew XX, where XX is the number of days left until certificate expiration.
+ --renew XX, where XX is the number of days left until certificate expiration.
 
-If le.pl detects that it is XX or fewer days left until certificate expiration, then (and only then) the renewal process will be run,
-so the script can be safely put into crontab to run on a daily basis if needed. The amount of days left is checked by either of two
-methods:
+If le.pl detects that it is XX or fewer days left until certificate expiration,
+then (and only then) the renewal process will be run, so the script can be
+safely put into crontab to run on a daily basis if needed. The amount of days
+left is checked by either of two methods:
 
- 1) If the certificate (which name is used with --crt parameter) is available locally, then it will be loaded and checked.
+ 1) If the certificate (which name is used with --crt parameter) is available
+    locally, then it will be loaded and checked.
 
- 2) If the certificate is not available locally (for example if you moved it to another server), then an attempt to
-    connect to the domains listed in --domains or CSR will be made until the first successful response is received. The
-    peer certificate will be then checked for expiration.
+ 2) If the certificate is not available locally (for example if you moved it
+    to another server), then an attempt to connect to the domains listed in
+    --domains or CSR will be made until the first successful response is
+    received. The peer certificate will be then checked for expiration.
 
- NOTE: by default a staging server is used, which does not provide trusted certificates. This is to avoid hitting a 
-       rate limits on Let's Encrypt live server. To generate an actual certificate, always add --live option.
+ NOTE: By default a staging server is used, which does not provide trusted
+ certificates. This is to avoid exceeding a rate limits on Let's Encrypt
+ live server. To generate an actual certificate, always add --live option.
        
  ==================================
  LOGGING CONFIGURATION FILE EXAMPLE
@@ -473,32 +533,38 @@ methods:
  log4perl.appender.Screen.layout = PatternLayout
  log4perl.appender.Screen.layout.ConversionPattern = %d [%p] %m%n
         
+EOF
+    }
+    print <<'EOF';
  =====================
  AVAILABLE PARAMETERS:
  =====================
 
- key <file>                       - Your account key file.
- csr <file>                       - Your CSR file.
- csr-key <file>                   - Key for your CSR (only mandatory if CSR is missing and to be generated).
- curve <name|default>             - Use ECC with the specified curve instead of RSA to generate a domain key and CSR.
- domains <list>                   - Domains as comma-separated list (only mandatory if CSR is missing).
- path <absolute path>             - Path to local .well-known/acme-challenge/ to drop required challenge files into (optional).
- handle-with <Some::Module>       - Module name to handle challenges with (optional).
- handle-as <http|dns|tls|...>     - Type of challenge to request, by default 'http' (optional).
- handle-params <{json}|file>      - JSON (or name of the file containing it) with parameters to be passed to the challenge-handling module (optional).
- complete-with <Another::Module>  - Module name to handle process completion with (optional).
- complete-params <{json}|file>    - JSON (or name of the file containing it) with parameters to be passed to the completion-handling module (optional).
- issue-code XXX                   - Use specific exit code on certificate issuance/renewal.
- email <some@mail.address>        - Mail address for the account registration and certificate expiration notifications (optional).
- log-config <file>                - Configuration file for logging (perldoc Log::Log4perl to see configuration examples).
- generate-missing                 - Generate missing files (key, csr and csr-key).
- generate-only                    - Generate a new key and/or CSR if they are missing and then exit.
- unlink                           - Remove challenge files which were automatically created if --path option was used.
- renew <XX>                       - Renew the certificate if XX or fewer days are left until its expiration.
- crt <file>                       - Name for the domain certificate file.
- revoke                           - Revoke a certificate.
- legacy                           - Legacy mode for old Apache, some Control Panels, AWS services and specific devices not supporting long keys.
- live                             - Connect to a live server instead of staging.
- debug                            - Print out debug messages.
- help                             - This screen.
+-key <file>                  : Account key file.
+-csr <file>                  : CSR file.
+-csr-key <file>              : Key for CSR (optional if CSR exists).
+-crt <file>                  : Name for the domain certificate file.
+-domains <list>              : Domains list (optional if CSR exists).
+-renew <XX>                  : Renew if XX or fewer days are left.
+-curve <name|default>        : ECC curve name (optional).
+-path <absolute path>        : Path to .well-known/acme-challenge/ (optional).
+-handle-with <module>        : Module to handle challenges with (optional).
+-handle-as <http|dns|tls>    : Type of challenge, by default 'http' (optional).
+-handle-params <json|file>   : JSON for the challenge module (optional).
+-complete-with <module>      : Module to handle completion with (optional).
+-complete-params <json|file> : JSON for the completion module (optional).
+-issue-code XXX              : Exit code to use on issuance/renewal (optional).
+-email <some@mail.address>   : Email for expiration notifications (optional).
+-log-config <file>           : Configuration file for logging.
+-generate-missing            : Generate missing files (key, csr and csr-key).
+-generate-only               : Exit after generating the missing files.
+-unlink                      : Remove challenge files automatically.
+-revoke                      : Revoke a certificate.
+-legacy                      : Legacy mode (shorter keys, separate CA file).
+-live                        : Use the live server instead of the test one.
+-debug                       : Print out debug messages.
+-help                        : Detailed help.
 
+EOF
+    exit(1);
+}
