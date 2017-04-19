@@ -4,7 +4,7 @@ use 5.006;
 use strict;
 use warnings;
 
-our $VERSION = '0.21';
+our $VERSION = '0.22';
 
 =head1 NAME
 
@@ -12,7 +12,7 @@ Crypt::LE - Let's Encrypt API interfacing module and client.
 
 =head1 VERSION
 
-Version 0.21
+Version 0.22
 
 =head1 SYNOPSIS
 
@@ -90,6 +90,9 @@ INVALID_DATA
 
 =item *
 DATA_MISMATCH 
+
+=item *
+UNSUPPORTED
 
 =item *
 ALREADY_DONE
@@ -420,7 +423,7 @@ be either KEY_RSA or KEY_ECC (if supported on your system) and key attribute is 
 By default an RSA key of 4096 bits will be used.
 Domains list is mandatory and can be given as a string of comma-separated names or as an array reference.
 
-Returns: OK | ERROR | INVALID_DATA.
+Returns: OK | ERROR | UNSUPPORTED | INVALID_DATA.
 
 =cut
 

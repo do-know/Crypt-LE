@@ -1,9 +1,14 @@
 Revision history for Crypt-LE
 
+0.22    18 April 2017
+        - Client will now postpone fetching the resource directory (so you can generate CSRs and keys completely offline).
+        - Win32 and Win64 binaries are to be available with releases (at https://github.com/do-know/Crypt-LE/releases).
+        - Minor documentation changes.
+
 0.21    17 April 2017
         - Multi-webroot support added (for multiple domains on the same certificate having different webroots).
         - Renew expiration date check should now also work with old libraries not reporting certificate depth.
-        - Domains method should now return loaded domains in the same order as those were provided rather than sorted.
+        - Domains method should now return loaded domains in the same order as provided rather than sorted.
         - Help output from the client is narrowed down to fit small screens like Windows console better.
         - Minor documentation changes.
 

@@ -13,7 +13,7 @@ use Module::Load;
 use Crypt::LE ':errors', ':keys';
 use utf8;
 
-my $VERSION = '0.21';
+my $VERSION = '0.22';
 
 use constant PEER_CRT  => 4;
 use constant CRT_DEPTH => 5;
@@ -36,7 +36,7 @@ sub work {
     my $rv = parse_options($opt);
     return $rv if $rv;
 
-    my $le = Crypt::LE->new(debug => $opt->{'debug'}, live => $opt->{'live'}, logger => $opt->{'logger'});
+    my $le = Crypt::LE->new(autodir => 0, debug => $opt->{'debug'}, live => $opt->{'live'}, logger => $opt->{'logger'});
 
     if (-r $opt->{'key'}) {
         $opt->{'logger'}->info("Loading an account key from $opt->{'key'}");
@@ -117,7 +117,7 @@ sub work {
     if ($opt->{'email'}) {
         return _error($le->error_details) if $le->set_account_email($opt->{'email'});
     }
-    
+    return _error("Could not load the resource directory: " . $le->error_details) if $le->directory;
     $opt->{'logger'}->info("Registering the account key");
     return _error($le->error_details) if $le->register;
     my $current_account_id = $le->registration_id||'unknown';
@@ -420,7 +420,7 @@ sub process_verification {
 
 sub usage_and_exit {
     my $opt = shift;
-    print "\n ZeroSSL Crypt::LE client v0.21\n\n";
+    print "\n ZeroSSL Crypt::LE client v$VERSION\n\n";
     if ($opt->{'help'}) {
         print << 'EOF';
  ===============
