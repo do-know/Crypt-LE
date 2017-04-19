@@ -8,9 +8,11 @@ This module provides the functionality necessary to use Let's Encrypt API and ge
 
 ### COMPATIBILITY
 
-The code has been successfully tested on more than 500 combinations of OS and Perl versions. It should install and run fine on Linux, FreeBSD, NetBSD, etc. It also works on Mac OS X and Windows (tested with ActiveState and Strawberry Perl). You can find appropriate PPMs at [ActiveState](https://code.activestate.com/ppm/Crypt-LE/). Please note that pure Windows environments are supported starting from version 0.17 of the module. If you are using Cygwin, then earlier versions would work too.
+- The code has been successfully tested on more than 500 combinations of OS and Perl versions. It should install and run fine on Linux, FreeBSD, NetBSD, etc. It also works on Mac OS X and Windows (tested with ActiveState and Strawberry Perl). You can find appropriate PPMs at [ActiveState](https://code.activestate.com/ppm/Crypt-LE/). Please note that pure Windows environments are supported starting from version 0.17 of the module. If you are using Cygwin, then earlier versions would work too.
 
-**In addition, if you are able to run docker containers, you can pull the latest client image from https://hub.docker.com/r/zerossl/client/. Docker image is lightweight and the client is run as a non-privileged user in a container.**
+- If you are a _Windows_ user, you can download portable [Win32/Win64 binaries](https://github.com/do-know/Crypt-LE/releases) (works even on Windows XP).
+
+- In addition, you can pull the latest client image from [Docker Hub](https://hub.docker.com/r/zerossl/client/) (lightweight non-root container).
 
 ### REQUIREMENTS
 
