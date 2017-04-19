@@ -18,7 +18,7 @@ This module provides the functionality necessary to use Let's Encrypt API and ge
 
 With Linux systems there are just 3 essential things which should be in place for the package to be successfully installed: "gcc", "make" and the SSL development package. The SSL development package name differs depending on Linux distribution and it can be either "libssl-dev" or "openssl-devel". See https://zerossl.com/installation.html for more details.
 
-With Windows you don't have to install anything but Perl. In fact, in case of [Strawberry Perl](http://strawberryperl.com/releases.html) you don't have to install Perl either - it is enough to download the portable version of it, unzip and then use "cpanm" to install Crypt::LE. This way you can even carry it with you on a flash drive and run it anywhere.
+With Windows you don't have to install anything but Perl. In fact, in case of [Strawberry Perl](http://strawberryperl.com/releases.html) you don't have to install Perl either - it is enough to download the portable version of it, unzip and then use "cpanm" to install Crypt::LE. This way you can even carry it with you on a flash drive and run it anywhere. Also, if you don't want to install anything at all or download Perl, you can simply use [Windows binaries](https://github.com/do-know/Crypt-LE/releases) - self-sufficient and portable.
 
 ### INSTALLATION
 
