@@ -37,7 +37,7 @@ With Windows you don't have to install anything but Perl. In fact, in case of [S
 
 ### CLIENT
 
-With `le.pl` you should be able to quickly get your SSL certificates issued. Run it without parameters to see how it is used. The client supports 'http' and 'dns' challenges out of the box.
+With `le.pl` you should be able to quickly get your SSL certificates issued. Run it without parameters to see how it is used or with --help for an extended help and examples. The client supports 'http' and 'dns' challenges out of the box.
 
 > **Important:** By default all your actions are run against the test server, which behaves exactly as the live one, but produces certificates **not** trusted by the browsers. Once you have tested the process and want to get an actual **trusted** certificate, always append **`--live`** parameter to the command line.
 
@@ -51,9 +51,13 @@ That will generate an account key and a CSR if they are missing. If any of those
 
     le.pl ... --path /some/path/to/.well-known/acme-challenge --unlink
 
-*_To use DNS verification of domain ownership, you can use `--handle-as` and `handle-with` parameters:_*
+*_To use DNS verification of domain ownership, you can use `--handle-as` parameter:_*
 
-     le.pl ... --handle-as dns --handle-with Crypt::LE::Challenge::Simple
+     le.pl ... --handle-as dns
+
+If you are using IDN (internationalized domain names) and generating a certificate for those, you can either encode those into "punycode" form by yourself, or let the client do that for you. Please note that for the
+conversion to work properly you need to have correct locale settings on your system. For Linux-based systems you can check that with the "locale" command, for Windows make sure that "System locale" in the Control Panel is
+set correctly.
 
 For more examples, logging configuration and all available parameters overview use `--help`:
 
@@ -100,9 +104,11 @@ Client uses *Log::Log4perl* module for logging. You can easily configure it to l
      log4perl.appender.File.mode = append
      log4perl.appender.File.layout = PatternLayout
      log4perl.appender.File.layout.ConversionPattern = %d [%p] %m%n
+     log4perl.appender.File.utf8 = 1
      log4perl.appender.Screen = Log::Log4perl::Appender::Screen
      log4perl.appender.Screen.layout = PatternLayout
      log4perl.appender.Screen.layout.ConversionPattern = %d [%p] %m%n
+     log4perl.appender.Screen.utf8 = 1
 
 Save the configuration into some file and then run `le.pl` with `--log-config` parameter specifying that configuration file name, for those settings to take effect.
 

@@ -4,7 +4,7 @@ use warnings;
 use Digest::SHA 'sha256';
 use MIME::Base64 'encode_base64url';
 
-our $VERSION = '0.22';
+our $VERSION = '0.23';
 
 =head1 NAME
 
@@ -59,7 +59,7 @@ sub handle_challenge_dns {
     my $value = encode_base64url(sha256("$challenge->{token}.$challenge->{fingerprint}"));
     print "Challenge for '$challenge->{domain}' requires the following DNS record to be created:\n";
     print "Host: _acme-challenge.$challenge->{domain}, type: TXT, value: $value\n";
-    print "Wait for DNS to update, by checking it with the command: nslookup -q=TXT _acme-challenge.$challenge->{domain}\n";
+    print "Wait for DNS to update by checking it with the command: nslookup -q=TXT _acme-challenge.$challenge->{domain}\n";
     print "When you see a text record returned, press <Enter>";
     <STDIN>;
     return 1;

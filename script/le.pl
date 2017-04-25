@@ -10,10 +10,13 @@ use Time::Piece;
 use Time::Seconds;
 use Log::Log4perl;
 use Module::Load;
+use Encode 'decode';
+use Digest::SHA 'sha256';
+use MIME::Base64 'encode_base64url';
 use Crypt::LE ':errors', ':keys';
 use utf8;
 
-my $VERSION = '0.22';
+my $VERSION = '0.23';
 
 use constant PEER_CRT  => 4;
 use constant CRT_DEPTH => 5;
@@ -21,8 +24,8 @@ use constant CRT_DEPTH => 5;
 exit main();
 
 sub main {
-    Log::Log4perl->easy_init();
-    my $opt = { logger => Log::Log4perl->get_logger() };
+    Log::Log4perl->easy_init({ utf8  => 1 });
+    my $opt = { logger => Log::Log4perl->get_logger(), e => encode_args() };
     binmode(STDOUT, ":encoding(UTF-8)");
     if (my $rv = work($opt)) {
         $opt->{logger}->error($rv->{'msg'}) if $rv->{'msg'};
@@ -65,6 +68,10 @@ sub work {
         return;
     }
 
+    if ($opt->{'domains'} and !$opt->{'e'}) {
+        my @domains = grep { $_ } split /\s*\,\s*/, $opt->{'domains'};
+        $opt->{'domains'} = join ",", map { _puny($_) } @domains;
+    }
     if (-r $opt->{'csr'}) {
         $opt->{'logger'}->info("Loading a CSR from $opt->{'csr'}");
         $le->load_csr($opt->{'csr'}, $opt->{'domains'}) == OK or return _error("Could not load a CSR: " . $le->error_details);
@@ -133,9 +140,19 @@ sub work {
         return _error("Error requesting certificate: " . $le->error_details) if $new_crt_status != AUTH_ERROR;
         # Add multi-webroot option to parameters passed if it is set.
         $opt->{'handle-params'}->{'multiroot'} = $opt->{'multiroot'} if $opt->{'multiroot'};
+        # Handle DNS internally along with HTTP
+        my ($challenge_handler, $verification_handler) = ($opt->{'handler'}, $opt->{'handler'});
+        if (!$opt->{'handler'}) {
+            if ($opt->{'handle-as'}) {
+                return _error("Only 'http' and 'dns' can be handled internally, use external modules for other verification types.") unless $opt->{'handle-as'}=~/^(http|dns)$/i;
+                if (lc($1) eq 'dns') {
+                    ($challenge_handler, $verification_handler) = (\&process_challenge_dns, \&process_verification_dns);
+                }
+            }
+        }
         return _error($le->error_details) if $le->request_challenge();
-        return _error($le->error_details) if $le->accept_challenge($opt->{'handler'} || \&process_challenge, $opt->{'handle-params'}, $opt->{'handle-as'});
-        return _error($le->error_details) if $le->verify_challenge($opt->{'handler'} || \&process_verification, $opt->{'handle-params'}, $opt->{'handle-as'});
+        return _error($le->error_details) if $le->accept_challenge($challenge_handler || \&process_challenge, $opt->{'handle-params'}, $opt->{'handle-as'});
+        return _error($le->error_details) if $le->verify_challenge($verification_handler || \&process_verification, $opt->{'handle-params'}, $opt->{'handle-as'});
     }
     unless ($le->certificate) {
         $opt->{'logger'}->info("Requesting domain certificate.");
@@ -184,7 +201,7 @@ sub work {
 sub parse_options {
     my $opt = shift;
     my $args = @ARGV;
-    
+
     GetOptions ($opt, 'key=s', 'csr=s', 'csr-key=s', 'domains=s', 'path=s', 'crt=s', 'email=s', 'curve=s', 'renew=i',
         'issue-code=i', 'handle-with=s', 'handle-as=s', 'handle-params=s', 'complete-with=s', 'complete-params=s', 'log-config=s',
         'generate-missing', 'generate-only', 'revoke', 'legacy', 'unlink', 'live', 'debug', 'help') || return _error("Use --help to see the usage examples.");
@@ -194,6 +211,7 @@ sub parse_options {
     return $rv if $rv;
 
     $opt->{'logger'}->info("[ ZeroSSL Crypt::LE client v$VERSION started. ]");
+    $opt->{'logger'}->warn("Could not encode arguments, support for internationalized domain names may not be available.") if $opt->{'e'};
 
     return _error("Incorrect parameters - need account key file name specified.") unless $opt->{'key'};
     if (-e $opt->{'key'}) {
@@ -242,7 +260,7 @@ sub parse_options {
             my $rv = _load_params($opt, 'handle-params');
             return $rv if $rv;
         } else {
-            $opt->{'handle-params'} = { path => $opt->{'path'}, unlink => $opt->{'unlink'}, logger => $opt->{'logger'} };
+            $opt->{'handle-params'} = { path => $opt->{'path'}, unlink => $opt->{'unlink'} };
         }
 
         if ($opt->{'complete-with'}) {
@@ -255,10 +273,33 @@ sub parse_options {
             my $rv = _load_params($opt, 'complete-params');
             return $rv if $rv;
         } else {
-            $opt->{'complete-params'} = { path => $opt->{'path'}, unlink => $opt->{'unlink'}, logger => $opt->{'logger'} };
+            $opt->{'complete-params'} = { path => $opt->{'path'}, unlink => $opt->{'unlink'} };
         }
     }
     return;
+}
+
+sub encode_args {
+    eval {
+        my $from;
+        if ($^O eq 'MSWin32') {
+            load 'Win32';
+            if (defined &Win32::GetACP) {
+                $from = "cp" . Win32::GetACP();
+            } else {
+                load 'Win32::API';
+                Win32::API->Import('kernel32', 'int GetACP()');
+                $from = "cp" . GetACP() if (defined &GetACP);
+            }
+            $from ||= 'cp1252';
+        } else {
+            load 'I18N::Langinfo';
+            $from = I18N::Langinfo::langinfo(&I18N::Langinfo::CODESET) || 'UTF-8';
+        }
+        @ARGV = map { decode $from, $_ } @ARGV;
+        autoload 'URI::_punycode';
+    };
+    return $@;
 }
 
 sub reconfigure_log {
@@ -268,12 +309,22 @@ sub reconfigure_log {
             Log::Log4perl::init($opt->{'log-config'});
         };
         if ($@ or !%{Log::Log4perl::appenders()}) {
-            Log::Log4perl->easy_init();
+            Log::Log4perl->easy_init({ utf8  => 1 });
             return _error("Could not init logging with '$opt->{'log-config'}' file");
         }
         $opt->{logger} = Log::Log4perl->get_logger();
     }
     return;
+}
+
+sub _puny {
+    my $domain = shift;
+    my @rv = ();
+    for (split /\./, $domain) {
+        my $enc = encode_punycode($_);
+        push @rv, ($_ eq $enc) ? $_ : 'xn--' . $enc;
+    }
+    return join '.', @rv;
 }
 
 sub _path_mismatch {
@@ -364,19 +415,19 @@ sub process_challenge {
     if ($params->{'path'}) {
         my $path = $params->{'multiroot'} ? $params->{'multiroot'}->{$challenge->{domain}} : $params->{'path'};
         unless ($path) {
-            $params->{'logger'}->error("Could not find the path for domain '$challenge->{domain}' to save the challenge file into.");
+            $challenge->{'logger'}->error("Could not find the path for domain '$challenge->{domain}' to save the challenge file into.");
             return 0;
         }
         my $file = "$path/$challenge->{token}";
         if (-e $file) {
-           $params->{'logger'}->error("File already exists - this should not be the case, please move it or remove it.");
+           $challenge->{'logger'}->error("File already exists - this should not be the case, please move it or remove it.");
            return 0;
         }
         if (_write($file, $text)) {
-           $params->{'logger'}->error("Failed to save a challenge file '$file' for domain '$challenge->{domain}'");
+           $challenge->{'logger'}->error("Failed to save a challenge file '$file' for domain '$challenge->{domain}'");
            return 0;
         } else {
-           $params->{'logger'}->info("Successfully saved a challenge file '$file' for domain '$challenge->{domain}'");
+           $challenge->{'logger'}->info("Successfully saved a challenge file '$file' for domain '$challenge->{domain}'");
            return 1;
         }
     }
@@ -392,29 +443,54 @@ EOF
 sub process_verification {
     my ($results, $params) = @_;
     if ($results->{valid}) {
-        $params->{'logger'}->info("Domain verification results for '$results->{domain}': success.");
+        $results->{'logger'}->info("Domain verification results for '$results->{domain}': success.");
     } else {
-        $params->{'logger'}->error("Domain verification results for '$results->{domain}': error. " . $results->{'error'});
+        $results->{'logger'}->error("Domain verification results for '$results->{domain}': error. " . $results->{'error'});
     }
     my $path = $params->{'multiroot'} ? $params->{'multiroot'}->{$results->{domain}} : $params->{'path'};
     my $file = $path ? "$path/$results->{token}" : $results->{token};
     if ($params->{'unlink'}) {
         unless ($path) {
-            $params->{'logger'}->error("Could not find the path for domain '$results->{domain}' - you may need to find and remove file named '$results->{token}' manually.");
+            $results->{'logger'}->error("Could not find the path for domain '$results->{domain}' - you may need to find and remove file named '$results->{token}' manually.");
         } else {
             if (-e $file) {
                 if (unlink $file) {
-                    $params->{'logger'}->info("Challenge file '$file' has been deleted.");
+                    $results->{'logger'}->info("Challenge file '$file' has been deleted.");
                 } else {
-                    $params->{'logger'}->error("Could not delete the challenge file '$file', you may need to do it manually.");
+                    $results->{'logger'}->error("Could not delete the challenge file '$file', you may need to do it manually.");
                 }
             } else {
-                $params->{'logger'}->error("Could not find the challenge file '$file' to delete, it might have been already removed.");
+                $results->{'logger'}->error("Could not find the challenge file '$file' to delete, it might have been already removed.");
             }
         }
     } else {
-        $params->{'logger'}->info("You can now delete the '$file' file.");
+        $results->{'logger'}->info("You can now delete the '$file' file.");
     }
+    1;
+}
+
+sub process_challenge_dns {
+    my ($challenge, $params) = @_;
+    my $value = encode_base64url(sha256("$challenge->{token}.$challenge->{fingerprint}"));
+    print <<EOF;
+Challenge for '$challenge->{domain}' requires the following DNS record to be created:
+Host: _acme-challenge.$challenge->{domain}, type: TXT, value: $value
+Wait for DNS to update by checking it with the command: nslookup -q=TXT _acme-challenge.$challenge->{domain}
+When you see a text record returned, press <Enter>
+EOF
+    <STDIN>;
+    return 1;
+}
+
+sub process_verification_dns {
+    my ($results, $params) = @_;
+    $results->{logger}->info("Processing the 'dns' verification for '$results->{domain}'");
+    if ($results->{valid}) {
+        $results->{'logger'}->info("Domain verification results for '$results->{domain}': success.");
+    } else {
+        $results->{'logger'}->error("Domain verification results for '$results->{domain}': error. " . $results->{'error'});
+    }
+    $results->{'logger'}->info("You can now delete '_acme-challenge.$results->{domain}' DNS record");
     1;
 }
 
@@ -481,7 +557,6 @@ e) To use basic DNS verification:
 
  le.pl --key account.key --csr domain.csr --csr-key domain.key --crt domain.crt
        --domains "www.domain.ext,domain.ext" --generate-missing --handle-as dns
-       --handle-with Crypt::LE::Challenge::Simple
 
 f) To just generate the keys and CSR:
 
@@ -529,9 +604,11 @@ left is checked by either of two methods:
  log4perl.appender.File.mode = append
  log4perl.appender.File.layout = PatternLayout
  log4perl.appender.File.layout.ConversionPattern = %d [%p] %m%n
+ log4perl.appender.File.utf8 = 1
  log4perl.appender.Screen = Log::Log4perl::Appender::Screen
  log4perl.appender.Screen.layout = PatternLayout
  log4perl.appender.Screen.layout.ConversionPattern = %d [%p] %m%n
+ log4perl.appender.Screen.utf8 = 1
         
 EOF
     }

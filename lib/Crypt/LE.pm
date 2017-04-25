@@ -4,7 +4,7 @@ use 5.006;
 use strict;
 use warnings;
 
-our $VERSION = '0.22';
+our $VERSION = '0.23';
 
 =head1 NAME
 
@@ -12,7 +12,7 @@ Crypt::LE - Let's Encrypt API interfacing module and client.
 
 =head1 VERSION
 
-Version 0.22
+Version 0.23
 
 =head1 SYNOPSIS
 
@@ -250,6 +250,11 @@ Enables automatic retrieval of the resource directory (required for normal API p
 Specifies the time in seconds to wait before Let's Encrypt servers are checked for the challenge verification results again. By default set to 2 seconds.
 Non-integer values are supported (so for example you can set it to 1.5 if you like).
 
+=item C<try>
+
+Specifies the amount of retries to attempt while in 'pending' state and waiting for verification results response. By default set to 300, which combined 
+with the delay of 2 seconds gives you 10 minutes of waiting.
+
 =item C<logger>
 
 Logger instance to use for debug messages. If not given, the messages will be printed to STDOUT.
@@ -270,6 +275,7 @@ sub new {
         debug   => 0,
         autodir => 1,
         delay   => 2,
+        try     => 300,
     };
     foreach my $key (keys %{$self}) {
         $self->{$key} = $params{$key} if (exists $params{$key} and !ref $params{$key});
@@ -695,7 +701,7 @@ sub request_challenge {
     my $self = shift;
     $self->_status(ERROR, "No domains are set.") unless $self->{domains};
     my ($domains_requested, %domains_failed);
-    foreach my $domain (sort keys %{$self->{domains}}) {
+    foreach my $domain (@{$self->{loaded_domains}}) {
         if (defined $self->{domains}->{$domain}) {
             $self->_debug("Domain $domain " . ($self->{domains}->{$domain} ? "has been already validated, skipping." : "challenge has been already requested, skipping."));
             next;
@@ -704,6 +710,7 @@ sub request_challenge {
         my ($status, $content) = $self->_request($self->{directory}->{'new-authz'}, { resource => 'new-authz', identifier => { type => 'dns', value => $domain } });
         $domains_requested++;
         if ($status == CREATED) {
+            my $valid_challenge = 0;
             foreach my $challenge (@{$content->{challenges}}) {
                 unless ($challenge and (ref $challenge eq 'HASH') and $challenge->{type} and $challenge->{uri} and $challenge->{status}) {
                     $self->_debug("Challenge for domain $domain does not contain required fields.");
@@ -714,11 +721,12 @@ sub request_challenge {
                     $self->_debug("Challenge ($type) for domain $domain is missing a valid token.");
                     next;
                 }
+                $valid_challenge = 1 if ($challenge->{status} eq 'valid');
                 $self->{challenges}->{$domain}->{$type} = $challenge;
             }
             if ($self->{challenges} and exists $self->{challenges}->{$domain}) {
                 $self->_debug("Received challenges for $domain.");
-                $self->{domains}->{$domain} = 0;
+                $self->{domains}->{$domain} = $valid_challenge;
             } else {
                 $self->_debug("Received no valid challenges for $domain.");
                 $domains_failed{$domain} = $self->_pull_error($content)||'No valid challenges';
@@ -810,7 +818,7 @@ sub accept_challenge {
     return $self->_status(INVALID_DATA, "Passed parameters are not pointing to a hash.") if ($params and (ref $params ne 'HASH'));
     my ($domains_accepted, @domains_failed);
     $self->{active_challenges} = undef;
-    foreach my $domain (sort keys %{$self->{domains}}) {
+    foreach my $domain (@{$self->{loaded_domains}}) {
         unless (defined $self->{domains}->{$domain} and !$self->{domains}->{$domain}) {
             $self->_debug($self->{domains}->{$domain} ? "Domain $domain has been already validated, skipping." : "Challenge has not yet been requested for domain $domain, skipping.");
             next;
@@ -919,7 +927,7 @@ sub verify_challenge {
         return $self->_status(INVALID_DATA, "Passed parameters are not pointing to a hash.") if ($params and (ref $params ne 'HASH'));
     }
     my ($domains_verified, @domains_failed);
-    foreach my $domain (sort keys %{$self->{domains}}) {
+    foreach my $domain (@{$self->{loaded_domains}}) {
         unless (defined $self->{domains}->{$domain} and !$self->{domains}->{$domain}) {
             $self->_debug($self->{domains}->{$domain} ? "Domain $domain has been already verified, skipping." : "Challenge has not yet been requested for domain $domain, skipping.");
             next;
@@ -936,9 +944,11 @@ sub verify_challenge {
         if ($status == ACCEPTED) {
             if ($content->{uri}) {
                 my $check = $content->{uri};
+                my $try = 0;
                 while ($status == ACCEPTED and $content and $content->{status} and $content->{status} eq 'pending') {
                     select(undef, undef, undef, $self->{delay});
                     ($status, $content) = $self->_request($check);
+                    last if ($self->{try} and (++$try == $self->{try}));
                 }
                 if ($status == ACCEPTED and $content and $content->{status}) {
                     if ($content->{status}=~/^(?:in)?valid$/) {

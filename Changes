@@ -1,5 +1,14 @@
 Revision history for Crypt-LE
 
+0.23    25 April 2017
+        - IDN (internationalized domain name) support has been added to the client. Note: the library itself was supporting
+          this from the beginning, as long as you pass domain names in "punycode" form. Now the client application will
+          encode such names into "punycode" for you if needed.
+        - Domain verification process now uses domains in the specified order rather than sorted.
+        - Domain verification is also supported by the client directly (no need to specify --handle-with).
+        - If there is a challenge result flagged as 'valid' for the domain, it will be re-used.
+        - Max amount of retries for waiting in 'pending' state can now be set (by default 300, resulting in 10 min wait time).
+
 0.22    18 April 2017
         - Client will now postpone fetching the resource directory (so you can generate CSRs and keys completely offline).
         - Win32 and Win64 binaries are to be available with releases (at https://github.com/do-know/Crypt-LE/releases).
