@@ -37,6 +37,13 @@ With Windows you don't have to install anything but Perl. In fact, in case of [S
 	make test
 	make install
 
+**Windows installation (with Strawberry Perl)**
+
+    cpanm -f Log::Log4perl
+    cpanm Crypt::LE
+
+Note: On Windows current version of the logging module needs to be installed with -f flag first if Strawberry Perl is used.
+
 ### CLIENT
 
 With `le.pl` you should be able to quickly get your SSL certificates issued. Run it without parameters to see how it is used or with --help for an extended help and examples. The client supports 'http' and 'dns' challenges out of the box.
