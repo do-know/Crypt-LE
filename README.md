@@ -4,7 +4,7 @@ This module provides the functionality necessary to use Let's Encrypt API and ge
 
 > The client + library package is codenamed ZeroSSL with the project homepage at https://ZeroSSL.com
 
-**Note:** If you do not need the automation and the flexibility this package offers, and just want to get a free SSL certificate without installing anything, you can do it too - with the In-Browser client, also at https://ZeroSSL.com
+**Note:** If you do not need the automation and the flexibility this package offers, and just want to get a free SSL certificate without installing anything, you can do that online with **[Free SSL Certificate Wizard](https://zerossl.com/#certificate)** (works on PC and mobiles, supports different languages:  EN, DE, FR, ES, RU, IT).
 
 ### COMPATIBILITY
 
