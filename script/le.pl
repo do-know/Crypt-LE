@@ -4,11 +4,8 @@ use warnings;
 use Getopt::Long;
 use IO::File;
 use JSON::MaybeXS;
-use HTTP::Tiny;
-use Net::SSLeay;
-use Time::Piece;
-use Time::Seconds;
 use Log::Log4perl;
+use Log::Log4perl::Level;
 use Module::Load;
 use Encode 'decode';
 use Digest::SHA 'sha256';
@@ -16,10 +13,7 @@ use MIME::Base64 'encode_base64url';
 use Crypt::LE ':errors', ':keys';
 use utf8;
 
-my $VERSION = '0.23';
-
-use constant PEER_CRT  => 4;
-use constant CRT_DEPTH => 5;
+my $VERSION = '0.24';
 
 exit main();
 
@@ -51,8 +45,26 @@ sub work {
         return _error("Failed to save an account key file") if _write($opt->{'key'}, $le->account_key);
     }
 
+    if ($opt->{'update-contacts'}) {
+        # Register.
+        my $reg = _register($le, $opt);
+        return $reg if $reg;
+        my @contacts = grep { $_ } split /\s*\,\s*/, $opt->{'update-contacts'};
+        return _error("Invalid contacts given.") unless @contacts;
+        my @rejected = ();
+        foreach (@contacts) {
+            /^(\w+:)?(.+)$/;
+            # NB: tel is not supported by LE at the moment.
+            my ($prefix, $data) = (lc($1||''), $2);
+            push @rejected, $_ unless ($data=~/^[^\@]+\@[^\.]+\.[^\.]+/ and (!$prefix or ($prefix eq 'mailto:')));
+        }
+        return _error("Unknown format for the contacts: " . join(", ", @rejected)) if @rejected;
+        return _error("Could not update contact details: " . $le->error_details) if $le->update_contacts(\@contacts);
+        $opt->{'logger'}->info("Contact details have been updated.");
+        return;
+    }
+
     if ($opt->{'revoke'}) {
-        return _error("Name of the certificate file should be specified.") unless $opt->{'crt'};
         my $crt = _read($opt->{'crt'});
         return _error("Could not read the certificate file.") unless $crt;
         # Take the first certificate in file, disregard the issuer's one.
@@ -68,9 +80,13 @@ sub work {
         return;
     }
 
-    if ($opt->{'domains'} and !$opt->{'e'}) {
-        my @domains = grep { $_ } split /\s*\,\s*/, $opt->{'domains'};
-        $opt->{'domains'} = join ",", map { _puny($_) } @domains;
+    if ($opt->{'domains'}) {
+        if ($opt->{'e'}) {
+            $opt->{'logger'}->warn("Could not encode arguments, support for internationalized domain names may not be available.");
+        } else {
+            my @domains = grep { $_ } split /\s*\,\s*/, $opt->{'domains'};
+            $opt->{'domains'} = join ",", map { _puny($_) } @domains;
+        }
     }
     if (-r $opt->{'csr'}) {
         $opt->{'logger'}->info("Loading a CSR from $opt->{'csr'}");
@@ -101,15 +117,14 @@ sub work {
     if ($opt->{'renew'}) {
         if ($opt->{'crt'} and -r $opt->{'crt'}) {
             $opt->{'logger'}->info("Checking certificate for expiration (local file).");
-            verify_crt_file($opt);
+            $opt->{'expires'} = $le->check_expiration($opt->{'crt'});
             $opt->{'logger'}->warn("Problem checking existing certificate file.") unless (defined $opt->{'expires'});
         }
         unless (defined $opt->{'expires'}) {
             $opt->{'logger'}->info("Checking certificate for expiration (website connection).");
-            my $probe = HTTP::Tiny->new( agent => "Mozilla/5.0 (compatible; ZeroSSL Crypt::LE v$VERSION renewal agent; https://ZeroSSL.com/)", verify_SSL => 1, timeout => 10, SSL_options => { SSL_verify_callback => verify_crt($opt) } );
             foreach my $domain (@{$le->domains}) {
                 $opt->{'logger'}->info("Checking $domain");
-                $probe->head("https://$domain/");
+                $opt->{'expires'} = $le->check_expiration("https://$domain/");
                 last if (defined $opt->{'expires'});
             }
         }
@@ -124,13 +139,11 @@ sub work {
     if ($opt->{'email'}) {
         return _error($le->error_details) if $le->set_account_email($opt->{'email'});
     }
-    return _error("Could not load the resource directory: " . $le->error_details) if $le->directory;
-    $opt->{'logger'}->info("Registering the account key");
-    return _error($le->error_details) if $le->register;
-    my $current_account_id = $le->registration_id||'unknown';
-    $opt->{'logger'}->info($le->new_registration ? "The key has been successfully registered. ID: $current_account_id" : "The key is already registered. ID: $current_account_id");
-    $opt->{'logger'}->info("Make sure to check TOS at " . $le->tos) if ($le->tos_changed and $le->tos);
-    $le->accept_tos();
+
+    # Register.
+    my $reg = _register($le, $opt);
+    return $reg if $reg;
+
     # We might not need to re-verify, verification holds for a while.
     my $new_crt_status = $le->request_certificate();
     unless ($new_crt_status) {
@@ -203,15 +216,14 @@ sub parse_options {
     my $args = @ARGV;
 
     GetOptions ($opt, 'key=s', 'csr=s', 'csr-key=s', 'domains=s', 'path=s', 'crt=s', 'email=s', 'curve=s', 'renew=i',
-        'issue-code=i', 'handle-with=s', 'handle-as=s', 'handle-params=s', 'complete-with=s', 'complete-params=s', 'log-config=s',
-        'generate-missing', 'generate-only', 'revoke', 'legacy', 'unlink', 'live', 'debug', 'help') || return _error("Use --help to see the usage examples.");
+        'issue-code=i', 'handle-with=s', 'handle-as=s', 'handle-params=s', 'complete-with=s', 'complete-params=s', 'log-config=s', 'update-contacts=s',
+        'generate-missing', 'generate-only', 'revoke', 'legacy', 'unlink', 'live', 'quiet', 'debug', 'help') || return _error("Use --help to see the usage examples.");
 
     usage_and_exit($opt) unless ($args and !$opt->{'help'});
     my $rv = reconfigure_log($opt);
     return $rv if $rv;
 
     $opt->{'logger'}->info("[ ZeroSSL Crypt::LE client v$VERSION started. ]");
-    $opt->{'logger'}->warn("Could not encode arguments, support for internationalized domain names may not be available.") if $opt->{'e'};
 
     return _error("Incorrect parameters - need account key file name specified.") unless $opt->{'key'};
     if (-e $opt->{'key'}) {
@@ -220,14 +232,14 @@ sub parse_options {
         return _error("Account key file is missing and the option to generate missing files is not used.") unless $opt->{'generate-missing'};
     }
 
-    unless ($opt->{'crt'} or $opt->{'generate-only'}) {
+    unless ($opt->{'crt'} or $opt->{'generate-only'} or $opt->{'update-contacts'}) {
         return _error("Please specify a file name for the certificate.");
     }
 
     if ($opt->{'revoke'}) {
-        return _error("Need a certificate file for revoke to work.") unless (-r $opt->{'crt'});
+        return _error("Need a certificate file for revoke to work.") unless ($opt->{'crt'} and -r $opt->{'crt'});
         return _error("Need an account key - revoke assumes you had a registered account when got the certificate.") unless (-r $opt->{'key'});
-    } else {
+    } elsif (!$opt->{'update-contacts'}) {
         return _error("Incorrect parameters - need CSR file name specified.") unless $opt->{'csr'};
         if (-e $opt->{'csr'}) {
             return _error("CSR file is not readable.") unless (-r $opt->{'csr'});
@@ -314,7 +326,23 @@ sub reconfigure_log {
         }
         $opt->{logger} = Log::Log4perl->get_logger();
     }
+    $opt->{logger}->level($ERROR) if $opt->{'quiet'};
     return;
+}
+
+sub _register {
+    my ($le, $opt) = @_;
+    return _error("Could not load the resource directory: " . $le->error_details) if $le->directory;
+    $opt->{'logger'}->info("Registering the account key");
+    return _error($le->error_details) if $le->register;
+    my $current_account_id = $le->registration_id || 'unknown';
+    $opt->{'logger'}->info($le->new_registration ? "The key has been successfully registered. ID: $current_account_id" : "The key is already registered. ID: $current_account_id");
+    $opt->{'logger'}->info("Make sure to check TOS at " . $le->tos) if ($le->tos_changed and $le->tos);
+    $le->accept_tos();
+    if (my $contacts = $le->contact_details) {
+        $opt->{'logger'}->info("Current contact details: " . join(", ", map { s/^\w+://; $_ } (ref $contacts eq 'ARRAY' ? @{$contacts} : ($contacts))));
+    }
+    return 0;
 }
 
 sub _puny {
@@ -380,33 +408,7 @@ sub _write {
 
 sub _error {
     my ($msg, $code) = @_;
-    return { msg => $msg, code => $code||255 };
-}
-
-sub verify_crt {
-    my $opt = shift;
-    return sub {
-        unless (defined $_[CRT_DEPTH] and $_[CRT_DEPTH]) {
-            my ($t, $s);
-            eval {
-                $t = Net::SSLeay::X509_get_notAfter($_[PEER_CRT]);
-                $t = Time::Piece->strptime(Net::SSLeay::P_ASN1_TIME_get_isotime($t), "%Y-%m-%dT%H:%M:%SZ");
-            };
-            unless ($@) {
-                $s = $t - localtime;
-                $s = int($s->days);
-                $opt->{'expires'} = $s unless ($opt->{'expires'} and $s > $opt->{'expires'});
-            }
-        }
-    };
-}
-
-sub verify_crt_file {
-    my $opt = shift;
-    my $bio = Net::SSLeay::BIO_new_file($opt->{'crt'}, 'r') or return $!;
-    my $cert = Net::SSLeay::PEM_read_bio_X509($bio);
-    Net::SSLeay::BIO_free($bio);
-    return $cert ? verify_crt($opt)->(0, 0, 0, 0, $cert, 0) : "Could not parse the certificate";
+    return { msg => $msg, code => $code || 255 };
 }
 
 sub process_challenge {
@@ -568,6 +570,10 @@ g) To revoke a certificate:
 
  le.pl --key account.key --crt domain.crt --revoke
 
+h) To update your contact details:
+
+ le.pl --key account.key --update-contacts "one@example.com, two@example.com"
+
  ===============
  RENEWAL PROCESS
  ===============
@@ -632,6 +638,7 @@ EOF
 -complete-params <json|file> : JSON for the completion module (optional).
 -issue-code XXX              : Exit code to use on issuance/renewal (optional).
 -email <some@mail.address>   : Email for expiration notifications (optional).
+-update-contacts <emails>    : Update contact details.
 -log-config <file>           : Configuration file for logging.
 -generate-missing            : Generate missing files (key, csr and csr-key).
 -generate-only               : Exit after generating the missing files.
@@ -640,6 +647,7 @@ EOF
 -legacy                      : Legacy mode (shorter keys, separate CA file).
 -live                        : Use the live server instead of the test one.
 -debug                       : Print out debug messages.
+-quiet                       : Suppress all messages but errors.
 -help                        : Detailed help.
 
 EOF

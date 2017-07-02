@@ -5,13 +5,14 @@ use warnings;
 use Test::More;
 use Crypt::LE ':errors';
 $|=1;
-plan tests => 14;
+plan tests => 15;
 
 my $le = Crypt::LE->new(autodir => 0);
 
 can_ok($le, 'directory');
 can_ok($le, 'register');
 can_ok($le, 'accept_tos');
+can_ok($le, 'update_contacts');
 can_ok($le, 'request_challenge');
 can_ok($le, 'accept_challenge');
 can_ok($le, 'verify_challenge');

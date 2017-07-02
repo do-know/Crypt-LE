@@ -1,5 +1,12 @@
 Revision history for Crypt-LE
 
+0.24    02 July 2017
+        - Certificate expiration check method 'check_expiration' has been added to the library (supports scalars, files, URLs).
+        - Contact details methods 'contact_details' and 'update_contacts' have been added to the library.
+        - Client can now be used to update contacts via 'update-contacts' parameter (multiple emails supported).
+        - Client now supports a 'quiet' mode to suppress all messages but errors (via '--quiet' parameter).
+        - Minor documentation changes.
+
 0.23    25 April 2017
         - IDN (internationalized domain name) support has been added to the client. Note: the library itself was supporting
           this from the beginning, as long as you pass domain names in "punycode" form. Now the client application will

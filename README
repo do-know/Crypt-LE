@@ -67,6 +67,12 @@ examples see Crypt::LE::Challenge::Simple and Crypt::LE::Complete::Simple. Relat
 Please note that parameters for --handle-params and --complete-params are expected to be valid JSON documents or to point to files containing
 valid JSON documents.
 
+Note: If you would like to receive expiration notifications for your domain, you can specify --email parameter and an appropriate email address
+during the initial registration of the account. Later, shall you want to change your email or specify more than one, you can use --update-contacts
+parameter to update your contact information.
+
+For example: le.pl --key account.key --update-contacts "one@email.address, another@email.address"
+
 SUPPORT AND DOCUMENTATION
 
 After installing, you can find documentation for this module with the

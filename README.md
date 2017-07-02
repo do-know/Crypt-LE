@@ -68,11 +68,15 @@ If you are using IDN (internationalized domain names) and generating a certifica
 conversion to work properly you need to have correct locale settings on your system. For Linux-based systems you can check that with the "locale" command, for Windows make sure that "System locale" in the Control Panel is
 set correctly.
 
+**Note:** If you would like to receive expiration notifications for your domain, you can specify `--email` parameter and an appropriate email address
+during the initial registration of the account. Later, shall you want to change your email or specify more than one, you can use `--update-contacts`
+parameter to update your contact information. For example:
+
+    le.pl --key account.key --update-contacts "one@email.address, another@email.address"
+
 For more examples, logging configuration and all available parameters overview use `--help`:
 
     le.pl --help
-
-**Note:** It is advised to also use `--email` parameter for the very first run of the client, to register your account key with the email. While it is optional, that will allow you to receive certificaties expiration notifications and it might be used later to recover access to your account if you lose the key.
 
 ### RENEWALS
 

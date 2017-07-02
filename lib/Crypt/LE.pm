@@ -4,7 +4,7 @@ use 5.006;
 use strict;
 use warnings;
 
-our $VERSION = '0.23';
+our $VERSION = '0.24';
 
 =head1 NAME
 
@@ -131,6 +131,8 @@ use Net::SSLeay qw<XN_FLAG_RFC2253 ASN1_STRFLGS_ESC_MSB MBSTRING_UTF8>;
 use Scalar::Util 'blessed';
 use Encode 'encode_utf8';
 use Convert::ASN1;
+use Time::Piece;
+use Time::Seconds;
 use Data::Dumper;
 use base 'Exporter';
 
@@ -160,6 +162,9 @@ use constant {
 
     KEY_RSA                => 0,
     KEY_ECC                => 1,
+
+    PEER_CRT               => 4,
+    CRT_DEPTH              => 5,
 
     SAN                    => '2.5.29.17',
 };
@@ -644,7 +649,7 @@ sub register {
     $req->{contact} = [ "mailto:$self->{email}" ] if $self->{email};
     my ($status, $content) = $self->_request($self->{directory}->{'new-reg'}, $req);
     $self->{directory}->{reg} = $self->{location} if $self->{location};
-    $self->{registration_id} = undef;
+    $self->{$_} = undef for (qw<registration_id contact_details>);
     if ($status == ALREADY_DONE) {
         $self->{new_registration} = 0;
         $self->_debug("Key is already registered, reg path: $self->{directory}->{reg}.");
@@ -668,7 +673,12 @@ sub register {
     } else {
         return $self->_status(ERROR, $content);
     }
-    $self->{registration_id} = $self->{registration_info}->{id} if ($self->{registration_info} and ref $self->{registration_info} eq 'HASH');
+    if ($self->{registration_info} and ref $self->{registration_info} eq 'HASH') {
+        $self->{registration_id} = $self->{registration_info}->{id};
+        if ($self->{registration_info}->{contact} and (ref $self->{registration_info}->{contact} eq 'ARRAY') and @{$self->{registration_info}->{contact}}) {
+            $self->{contact_details} = $self->{registration_info}->{contact};
+        }
+    }
     $self->_debug("Account ID: $self->{registration_id}") if $self->{registration_id};
     return $self->_status(OK, "Registration success: TOS change status - $self->{tos_changed}, new registration flag - $self->{new_registration}.");
 }
@@ -684,8 +694,25 @@ Returns: OK | ERROR.
 sub accept_tos {
     my $self = shift;
     return $self->_status(OK, "TOS has NOT been changed, no need to accept again.") unless $self->tos_changed;
-    my ($status, $content) = $self->_request($self->{directory}->{'reg'}, { resource => 'reg', agreement => $self->{links}->{'terms-of-service'}, key => $self->{jwk} });
+    my ($status, $content) = $self->_request($self->{directory}->{'reg'}, { resource => 'reg', agreement => $self->{links}->{'terms-of-service'} });
     return ($status == ACCEPTED) ? $self->_status(OK, "Accepted TOS.") : $self->_status(ERROR, $content);
+}
+
+=head2 update_contacts($array_ref)
+
+Updates contact details for your Let's Encrypt account. Accepts an array reference of contacts.
+Non-prefixed contacts will be automatically prefixed with 'mailto:'.
+
+Returns: OK | INVALID_DATA | ERROR.
+
+=cut
+
+sub update_contacts {
+    my ($self, $contacts) = @_;
+    return $self->_status(INVALID_DATA, "Invalid call parameters.") unless ($contacts and (ref $contacts eq 'ARRAY'));
+    my @set = map { /^\w+:/ ? $_ : "mailto:$_" } @{$contacts};
+    my ($status, $content) = $self->_request($self->{directory}->{'reg'}, { resource => 'reg', contact => \@set });
+    return ($status == ACCEPTED) ? $self->_status(OK, "Email has been updated.") : $self->_status(ERROR, $content);
 }
 
 =head2 request_challenge()
@@ -1120,6 +1147,16 @@ sub registration_id {
     return shift->{registration_id};
 }
 
+=head2 contact_details()
+
+Returns: Contact details returned by Let's Encrypt for your key or undef.
+
+=cut
+
+sub contact_details {
+    return shift->{contact_details};
+}
+
 =head2 certificate()
 
 Returns: The last received certificate or undef.
@@ -1203,6 +1240,60 @@ sub verified_domains {
     return undef unless ($self->{domains} and %{$self->{domains}});
     my @list = grep { $self->{domains}->{$_} } keys %{$self->{domains}};
     return @list ? \@list : undef;
+}
+
+=head2 check_expiration($certificate_file|$scalar_ref|$url, [ \%params ])
+
+Checks the expiration of the certificate. Accepts an URL, a full path to the certificate file or a
+scalar reference to a certificate in memory. Optionally a hash ref of parameters can be provided with the
+timeout key set to the amount of seconds to wait for the https checks (by default set to 10 seconds).
+
+Returns: Days left until certificate expiration or undef on error. Note - zero and negative values can be
+returned for the already expired certificates. On error the status is set accordingly to one of the following:
+INVALID_DATA, LOAD_ERROR or ERROR, and the 'error_details' call can be used to get more information about the problem.
+
+=cut
+
+sub check_expiration {
+    my ($self, $res, $params) = @_;
+    my ($load_error, $exp);
+    my $timeout = $params->{timeout} if ($params and (ref $params eq 'HASH'));
+    if (!$res or ($timeout and ($timeout!~/^\d+/ or $timeout < 1))) {
+        $self->_status(INVALID_DATA, "Invalid parameters");
+        return undef;
+    } elsif (ref $res or $res!~m~^\w+://~i) {
+        my $bio;
+        if (ref $res) {
+            $bio = Net::SSLeay::BIO_new(Net::SSLeay::BIO_s_mem());
+            $load_error = 1 unless ($bio and Net::SSLeay::BIO_write($bio, $$res));
+        } else {
+           $bio = Net::SSLeay::BIO_new_file($res, 'r');
+           $load_error = 1 unless $bio;
+        }
+        unless ($load_error) {
+            my $cert = Net::SSLeay::PEM_read_bio_X509($bio);
+            Net::SSLeay::BIO_free($bio);
+            unless ($cert) {
+                $self->_status(LOAD_ERROR, "Could not parse the certificate");
+                return undef;
+            }
+            _verify_crt(\$exp)->(0, 0, 0, 0, $cert, 0);
+        } else {
+            $self->_status(LOAD_ERROR, "Could not load the certificate");
+            return undef;
+        }
+    } else {
+        $res=~s/^[^:]+/https/;
+        my $probe = HTTP::Tiny->new(
+            agent => "Mozilla/5.0 (compatible; ZeroSSL Crypt::LE v$VERSION agent; https://ZeroSSL.com/)",
+            verify_SSL => 1,
+            timeout => $timeout || 10,
+            SSL_options => { SSL_verify_callback => _verify_crt(\$exp) },
+            );
+        my $response = $probe->head($res);
+        $self->_status(ERROR, "Connection error: $response->{status} " . ($response->{reason}||'')) unless $response->{success};
+    }
+    return $exp;
 }
 
 =head2 error()
@@ -1422,6 +1513,24 @@ sub _file {
     return (ref $file eq 'SCALAR') ? $$file : undef;
 }
 
+sub _verify_crt {
+    my $exp = shift;
+    return sub {
+        unless (defined $_[CRT_DEPTH] and $_[CRT_DEPTH]) {
+            my ($t, $s);
+            eval {
+                $t = Net::SSLeay::X509_get_notAfter($_[PEER_CRT]);
+                $t = Time::Piece->strptime(Net::SSLeay::P_ASN1_TIME_get_isotime($t), "%Y-%m-%dT%H:%M:%SZ");
+            };
+            unless ($@) {
+                $s = $t - localtime;
+                $s = int($s->days);
+                $$exp = $s unless ($$exp and $s > $$exp);
+            }
+        }
+    };
+}
+
 sub _convert {
     my $self = shift;
     my ($content, $type) = @_;
@@ -1487,7 +1596,7 @@ L<https://Do-Know.com/>
 
 =head1 LICENSE AND COPYRIGHT
 
-Copyright 2016 Alexander Yezhov.
+Copyright 2016-2017 Alexander Yezhov.
 
 This program is free software; you can redistribute it and/or modify it
 under the terms of the Artistic License (2.0). You may obtain a

@@ -6,7 +6,7 @@ use Test::More;
 use File::Temp ();
 use Crypt::LE ':errors', ':keys';
 $|=1;
-plan tests => 53;
+plan tests => 55;
 
 my $le = Crypt::LE->new(autodir => 0);
 my $usable_csr = <<EOF;
@@ -47,6 +47,28 @@ PtY2ihVCoJGfiz7ikzhgvCjzAQgfxQNa+Wp/KV2N4/HoahkCTKyGrkHB+PLtqrzu
 O8ho4q67zQLiOttwCQzc+SL9laMCGj3BjLK3EqUlROpTOkMd0IldRogDcQRvy5qC
 6Tvdy33/JFev++ZEaLY/M2h3QYbc5fgkll5YDeiO8etS4u8OkRCgU74=
 -----END CERTIFICATE REQUEST-----
+EOF
+my $usable_crt = <<EOF;
+-----BEGIN CERTIFICATE-----
+MIIDQjCCAiqgAwIBAgIBATANBgkqhkiG9w0BAQsFADAUMRIwEAYDVQQDEwkxMjcu
+MC4wLjEwHhcNMTcwNzAyMDgyMTMxWhcNMjcwNzAyMDgyMTMxWjAUMRIwEAYDVQQD
+EwkxMjcuMC4wLjEwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCE/+lh
+oJdbkJmJbVRjIg05+xd29n7hz4SI19xio6e0kuvnxnLBS/rCeuLHeVa7n3gQPHhd
+GmL5fJ5k4r8m7XVoTKwQgxPyO4Hl/C1STyUraBHc0364xLJWa2KmO/GVjpAN/k0r
+9Ce0NdC8A0TJwhRrK8t3DDFsti5BwzYmIWHo7TKyZ7Og1onp7zOlR7LJEsKYyst/
+sLD+HonbGvRcnEzD+Mw/OPK7R7jkQRxnEj/aqudLjPj8jZGoBkWkhCe+GqvKCMQ0
+DerudsKvVP841vgB7qSBGLHHR4qUzXA2nUGGzjefE+AfV/bo3n8yq214rjdtLnh1
+a3oRWgwczNdy+8aRAgMBAAGjgZ4wgZswDAYDVR0TBAUwAwEB/zALBgNVHQ8EBAMC
+AvQwOwYDVR0lBDQwMgYIKwYBBQUHAwEGCCsGAQUFBwMCBggrBgEFBQcDAwYIKwYB
+BQUHAwQGCCsGAQUFBwMIMBEGCWCGSAGG+EIBAQQEAwIA9zAPBgNVHREECDAGhwR/
+AAABMB0GA1UdDgQWBBT+VuObL4pkhRyqiMte1EM0henL3TANBgkqhkiG9w0BAQsF
+AAOCAQEAYUhEzIjcaVohCB9ciB0FdISxvtJjAL3Z3ST+kBbGDQFp9gs7wmHj1ERu
+KZ1LDNOjyfWhX9UozogSyfdwEn6k/FZ3Mwy5c7ArsDX0U7EKHdJ1NYbU+P5GTex6
+CJBZn8EZ+UxORyjuctrOcVnHPHTuzUHFwnhH62rQ0pokyrFZXi4L2JzZVCfb3Xox
+YMG38g4jGU9eZ+2Jpxva7VgNNUVD9PbBNPW6J0h3at7bW98aTOnonQnhlmSDVA61
+Qqmp0jDrGOtOIXuOdkYUsnLj5ESajat67g0PxxxDbbk4UTzCYjXuXjy+tFDYEVuV
+lb+XMDEx0bcHpBoS1eYjGzNayJugag==
+-----END CERTIFICATE-----
 EOF
 
 can_ok($le, 'load_account_key');
@@ -145,5 +167,9 @@ ok(($rv == OK or $rv == UNSUPPORTED), 'Generating ECC-based CSR (default)');
 $le->load_csr_key(\"");
 $rv = $le->generate_csr('odd.domain', KEY_ECC, 'test');
 ok(($rv == ERROR or $rv == UNSUPPORTED), 'Generating ECC-based CSR (odd curve)');
+
+# Expiration checks against the invalid certificate and the one expiring in 2027.
+is($le->check_expiration(\'aaa'), undef, 'Checking invalid certificate expiration');
+ok(defined $le->check_expiration(\$usable_crt), 'Checking valid certificate expiration');
 
 diag( "Testing Crypt::LE $Crypt::LE::VERSION, Setup methods, $^X" );
