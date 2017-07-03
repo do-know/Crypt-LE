@@ -4,21 +4,21 @@ This module provides the functionality necessary to use Let's Encrypt API and ge
 
 > The client + library package is codenamed ZeroSSL with the project homepage at https://ZeroSSL.com
 
-**Note:** If you do not need the automation and the flexibility this package offers, and just want to get a free SSL certificate without installing anything, you can do it too - with the In-Browser client, also at https://ZeroSSL.com
+**Note:** If you do not need the automation and the flexibility this package offers, and just want to get a free SSL certificate without installing anything, you can do that online with **[Free SSL Certificate Wizard](https://zerossl.com/#certificate)** (works on PC and mobiles, supports different languages:  EN, DE, FR, ES, RU, IT).
 
 ### COMPATIBILITY
 
-- The code has been successfully tested on more than 500 combinations of OS and Perl versions. It should install and run fine on Linux, FreeBSD, NetBSD, etc. It also works on Mac OS X and Windows (tested with ActiveState and Strawberry Perl). You can find appropriate PPMs at [ActiveState](https://code.activestate.com/ppm/Crypt-LE/). Please note that pure Windows environments are supported starting from version 0.17 of the module. If you are using Cygwin, then earlier versions would work too.
+- The code has been successfully tested on more than 500 combinations of OS and Perl versions. It should install and run fine on Linux, FreeBSD, NetBSD, etc. It also works on Mac OS X and Windows (tested with ActiveState and Strawberry Perl).
 
-- If you are a _Windows_ user, you can download portable [Win32/Win64 binaries](https://github.com/do-know/Crypt-LE/releases) (works even on Windows XP).
+- If you are a Windows user, you can download portable **[Win32/Win64 binaries](https://github.com/do-know/Crypt-LE/releases)** (they work even on Windows XP and require NO installation).
 
-- In addition, you can pull the latest client image from [Docker Hub](https://hub.docker.com/r/zerossl/client/) (lightweight non-root container).
+- In addition, you can use the latest **[Docker Image](https://hub.docker.com/r/zerossl/client/)** (lightweight non-root container).
 
 ### REQUIREMENTS
 
 With Linux systems there are just 3 essential things which should be in place for the package to be successfully installed: "gcc", "make" and the SSL development package. The SSL development package name differs depending on Linux distribution and it can be either "libssl-dev" or "openssl-devel". See https://zerossl.com/installation.html for more details.
 
-With Windows you don't have to install anything but Perl. In fact, in case of [Strawberry Perl](http://strawberryperl.com/releases.html) you don't have to install Perl either - it is enough to download the portable version of it, unzip and then use "cpanm" to install Crypt::LE. This way you can even carry it with you on a flash drive and run it anywhere. Also, if you don't want to install anything at all or download Perl, you can simply use [Windows binaries](https://github.com/do-know/Crypt-LE/releases) - self-sufficient and portable.
+With Windows you don't have to install anything if you want to use [Windows binaries](https://github.com/do-know/Crypt-LE/releases) - self-sufficient and portable. Otherwise you just need to install Perl. Actually, in case of [Strawberry Perl](http://strawberryperl.com/releases.html) you don't have to install Perl either - it is enough to download the portable version of it, unzip and then use "cpanm" to install Crypt::LE.
 
 ### INSTALLATION
 
