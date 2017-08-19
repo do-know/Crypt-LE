@@ -4,7 +4,7 @@ use 5.006;
 use strict;
 use warnings;
 
-our $VERSION = '0.24';
+our $VERSION = '0.25';
 
 =head1 NAME
 
@@ -12,7 +12,7 @@ Crypt::LE - Let's Encrypt API interfacing module and client.
 
 =head1 VERSION
 
-Version 0.23
+Version 0.25
 
 =head1 SYNOPSIS
 
@@ -121,16 +121,16 @@ will be set with some values on error.
 =cut
 
 use Crypt::OpenSSL::RSA;
-use Crypt::Format;
 use JSON::MaybeXS;
 use HTTP::Tiny;
 use IO::File;
 use Digest::SHA 'sha256';
-use MIME::Base64 qw<encode_base64url decode_base64url>;
+use MIME::Base64 qw<encode_base64url decode_base64url decode_base64 encode_base64>;
 use Net::SSLeay qw<XN_FLAG_RFC2253 ASN1_STRFLGS_ESC_MSB MBSTRING_UTF8>;
 use Scalar::Util 'blessed';
 use Encode 'encode_utf8';
 use Convert::ASN1;
+use Module::Load;
 use Time::Piece;
 use Time::Seconds;
 use Data::Dumper;
@@ -172,10 +172,15 @@ use constant {
 our @EXPORT_OK = (qw<OK READ_ERROR LOAD_ERROR INVALID_DATA DATA_MISMATCH UNSUPPORTED ERROR BAD_REQUEST AUTH_ERROR ALREADY_DONE KEY_RSA KEY_ECC>);
 our %EXPORT_TAGS = ( 'errors' => [ @EXPORT_OK[0..9] ], 'keys' => [ @EXPORT_OK[10..11] ] );
 
+my $pkcs12_available = 0;
 my $header = 'replay-nonce';
 my $j = JSON->new->canonical()->allow_nonref();
 my $url_safe = qr/^[-_A-Za-z0-9]+$/; # RFC 4648 section 5.
 my $flag_rfc22536_utf8 = (XN_FLAG_RFC2253) & (~ ASN1_STRFLGS_ESC_MSB);
+if ($^O eq 'MSWin32') {
+    eval { autoload 'Crypt::OpenSSL::PKCS12'; };
+    $pkcs12_available = 1 unless $@;
+}
 
 # https://github.com/letsencrypt/boulder/blob/master/core/good_key.go
 my @primes = map { Crypt::OpenSSL::Bignum->new_from_decimal($_) } (
@@ -1035,7 +1040,7 @@ Returns: OK | AUTH_ERROR | ERROR.
 sub request_certificate {
     my $self = shift;
     return $self->_status(ERROR, "CSR is missing, make sure it has been either loaded or generated.") unless $self->{csr};
-    my $csr = encode_base64url(Crypt::Format::pem2der($self->{csr}));
+    my $csr = encode_base64url($self->pem2der($self->{csr}));
     my ($status, $content) = $self->_request($self->{directory}->{'new-cert'}, { resource => 'new-cert', csr => $csr });
     if ($status == CREATED) {
         $self->{certificate} = $self->_convert($content, 'CERTIFICATE');
@@ -1078,7 +1083,7 @@ sub revoke_certificate {
     my $file = shift;
     my $crt = $self->_file($file);
     return $self->_status(READ_ERROR, "Certificate reading error.") unless $crt;
-    my ($status, $content) = $self->_request($self->{directory}->{'revoke-cert'}, { resource => 'revoke-cert', certificate => encode_base64url(Crypt::Format::pem2der($crt)) });
+    my ($status, $content) = $self->_request($self->{directory}->{'revoke-cert'}, { resource => 'revoke-cert', certificate => encode_base64url($self->pem2der($crt)) });
     if ($status == SUCCESS) {
         return $self->_status(OK, "Certificate has been revoked.");
     } elsif ($status == ALREADY_DONE) {
@@ -1294,6 +1299,54 @@ sub check_expiration {
         $self->_status(ERROR, "Connection error: $response->{status} " . ($response->{reason}||'')) unless $response->{success};
     }
     return $exp;
+}
+
+=head2 pem2der($pem)
+
+Returns: DER form of the provided PEM content
+
+=cut
+
+sub pem2der {
+    my ($self, $pem) = @_;
+    return unless $pem;
+    $pem=~s/^-+.*$//mg;
+    $pem=~s/^[\r\n\s]+//;
+    $pem=~s/[\r\n\s]+$//;
+    return decode_base64($pem);
+}
+
+=head2 der2pem($der, $type)
+
+Returns: PEM form of the provided DER content of the given type (for example 'CERTIFICATE REQUEST') or undef.
+
+=cut
+
+sub der2pem {
+    my ($self, $der, $type) = @_;
+    return ($der and $type) ? "-----BEGIN $type-----$/" . encode_base64($der) . "-----END $type-----" : undef;
+}
+
+=head2 export_pfx($file, $pass, $cert, $key, [ $ca ])
+
+Exports given certificate, CA chain and a private key into a PFX/P12 format with a given password.
+
+Returns: OK | UNSUPPORTED | INVALID_DATA | ERROR.
+
+=cut
+
+sub export_pfx {
+    my ($self, $file, $pass, $cert, $key, $ca) = @_;
+    my $unsupported = "PFX export is not supported (requires specific build of PKCS12 library for Windows).";
+    return $self->_status(UNSUPPORTED, $unsupported) unless $pkcs12_available;
+    return $self->_status(INVALID_DATA, "Password is required") unless $pass;
+    my $pkcs12 = Crypt::OpenSSL::PKCS12->new();
+    eval {
+        $pkcs12->create($cert, $key, $pass, $file, $ca, "ZeroSSL exported");
+    };
+    return $self->_status(UNSUPPORTED, $unsupported) if ($@ and $@=~/Usage/);
+    return $self->_status(ERROR, $@) if $@;
+    return $self->_status(OK, "PFX exported to $file.");
 }
 
 =head2 error()
@@ -1534,7 +1587,7 @@ sub _verify_crt {
 sub _convert {
     my $self = shift;
     my ($content, $type) = @_;
-    return (!$content or $content=~/^\-+BEGIN/) ? $content : Crypt::Format::der2pem($content, $type);
+    return (!$content or $content=~/^\-+BEGIN/) ? $content : $self->der2pem($content, $type);
 }
 
 1;

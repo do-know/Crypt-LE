@@ -1,5 +1,10 @@
 Revision history for Crypt-LE
 
+0.25    19 August 2017
+        - Added experimental support for PFX/P12 export (only available for Windows binaries).
+        - Dropped Crypt::Format dependency to allow for cross-platform CSR loading.
+        - Improved parameters handling.
+
 0.24    02 July 2017
         - Certificate expiration check method 'check_expiration' has been added to the library (supports scalars, files, URLs).
         - Contact details methods 'contact_details' and 'update_contacts' have been added to the library.

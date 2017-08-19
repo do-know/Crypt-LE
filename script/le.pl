@@ -13,7 +13,7 @@ use MIME::Base64 'encode_base64url';
 use Crypt::LE ':errors', ':keys';
 use utf8;
 
-my $VERSION = '0.24';
+my $VERSION = '0.25';
 
 exit main();
 
@@ -189,6 +189,18 @@ sub work {
             $opt->{'logger'}->error("Failed to save the issuer's certificate, try to download manually from " . $le->issuer_url) if _write($opt->{'crt'}, $le->issuer);
         }
     }
+    if ($opt->{'export-pfx'}) {
+        # Note: At this point the certificate is already issued, but with pfx export option active we will return an error if export has failed, to avoid triggering
+        # the 'success' batch processing IIS users might have set up on issuance and export.
+        if ($le->issuer) {
+            my $target_pfx = $opt->{'crt'};
+            $target_pfx=~s/\.[^\.]*$//;
+            $opt->{'logger'}->info("Exporting certificate to $target_pfx.pfx.");
+            return _error("Error exporting pfx: " . $le->error_details) if $le->export_pfx("$target_pfx.pfx", $opt->{'export-pfx'}, $le->certificate, $le->csr_key, $le->issuer);
+        } else {
+            return _error("Issuer's certificate is not available, skipping pfx export to avoid creating an invalid pfx.");
+        }
+    }
     if ($opt->{'complete-handler'}) {
         # Add multi-webroot option to parameters passed if it is set.
         $opt->{'complete-params'}->{'multiroot'} = $opt->{'multiroot'} if $opt->{'multiroot'};
@@ -205,7 +217,6 @@ sub work {
             return _error("Completion handler " . ($@ ? "thrown an error: $@" : "did not return a true value"));
         }
     }
-
     $opt->{'logger'}->info("===> NOTE: You have been using the test server for this certificate. To issue a valid trusted certificate add --live option.") unless $opt->{'live'};
     $opt->{'logger'}->info("The job is done, enjoy your certificate! For feedback and bug reports contact us at [ https://ZeroSSL.com | https://Do-Know.com ]\n");
     return { code => $opt->{'issue-code'}||0 };
@@ -215,8 +226,8 @@ sub parse_options {
     my $opt = shift;
     my $args = @ARGV;
 
-    GetOptions ($opt, 'key=s', 'csr=s', 'csr-key=s', 'domains=s', 'path=s', 'crt=s', 'email=s', 'curve=s', 'renew=i',
-        'issue-code=i', 'handle-with=s', 'handle-as=s', 'handle-params=s', 'complete-with=s', 'complete-params=s', 'log-config=s', 'update-contacts=s',
+    GetOptions ($opt, 'key=s', 'csr=s', 'csr-key=s', 'domains=s', 'path=s', 'crt=s', 'email=s', 'curve=s', 'renew=i', 'issue-code=i',
+        'handle-with=s', 'handle-as=s', 'handle-params=s', 'complete-with=s', 'complete-params=s', 'log-config=s', 'update-contacts=s', 'export-pfx=s',
         'generate-missing', 'generate-only', 'revoke', 'legacy', 'unlink', 'live', 'quiet', 'debug', 'help') || return _error("Use --help to see the usage examples.");
 
     usage_and_exit($opt) unless ($args and !$opt->{'help'});
@@ -234,6 +245,15 @@ sub parse_options {
 
     unless ($opt->{'crt'} or $opt->{'generate-only'} or $opt->{'update-contacts'}) {
         return _error("Please specify a file name for the certificate.");
+    }
+
+    if ($opt->{'export-pfx'}) {
+        if ($opt->{'crt'} and $opt->{'crt'}=~/\.pfx$/i) {
+            return _error("Please ensure that the extension of the certificate filename is different from '.pfx' to be able to additionally export the certificate in pfx form.");
+        }
+        unless ($opt->{'csr-key'} and (-r $opt->{'csr-key'} or ($opt->{'generate-missing'} and ! -e $opt->{'csr'}))) {
+            return _error("Need either existing csr-key specified or having CSR file generated (via 'generate-missing') for PFX export to work");
+        }
     }
 
     if ($opt->{'revoke'}) {
@@ -292,6 +312,27 @@ sub parse_options {
 }
 
 sub encode_args {
+    my @ARGVmod = ();
+    my @vals = ();
+    # Account for cmd-shell parameters splitting.
+    foreach my $param (@ARGV) {
+        if ($param=~/^-/) {
+            if (@vals) {
+                push @ARGVmod, join(" ", @vals);
+                @vals = ();
+            }
+            if ($param=~/^(.+?)\s*=\s*(.*)$/) {
+                push @ARGVmod, $1;
+                push @vals, $2 if $2;
+            } else {
+                push @ARGVmod, $param;
+            }
+        } else {
+            push @vals, $param;
+        }
+    }
+    push @ARGVmod, join(" ", @vals) if @vals;
+    @ARGV = @ARGVmod;
     eval {
         my $from;
         if ($^O eq 'MSWin32') {
@@ -511,10 +552,15 @@ a) To register (if needed) and issue a certificate:
        --csr-key domain.key --crt domain.crt --generate-missing
        --domains "www.domain.ext,domain.ext"
 
-Please note that email is only used for the initial registration and
-cannot be changed later. Even though it is optional, you may want to
-have your email registered to receive certificate expiration notifications
-and be able to recover your account in the future if needed.
+If you want to additionally export the certificate into PFX format (for
+example to use it with IIS), add --export-pfx <password> as an option,
+where password is what will be used to secure your PFX. This option is
+currently only available for Windows binaries.
+
+Please note that --email parameter is only used for the initial registration.
+To update it later you can use --update-contacts option. Even though it is
+optional, you may want to have your email registered to receive certificate
+expiration notifications.
 
 b) To have challenge files automatically placed into your web directory
    before the verification and then removed after the verification:
@@ -639,6 +685,7 @@ EOF
 -issue-code XXX              : Exit code to use on issuance/renewal (optional).
 -email <some@mail.address>   : Email for expiration notifications (optional).
 -update-contacts <emails>    : Update contact details.
+-export-pfx <password>       : Export PFX (Windows binaries only).
 -log-config <file>           : Configuration file for logging.
 -generate-missing            : Generate missing files (key, csr and csr-key).
 -generate-only               : Exit after generating the missing files.

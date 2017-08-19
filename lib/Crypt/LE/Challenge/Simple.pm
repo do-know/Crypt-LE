@@ -4,7 +4,7 @@ use warnings;
 use Digest::SHA 'sha256';
 use MIME::Base64 'encode_base64url';
 
-our $VERSION = '0.24';
+our $VERSION = '0.25';
 
 =head1 NAME
 

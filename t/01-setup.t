@@ -6,9 +6,10 @@ use Test::More;
 use File::Temp ();
 use Crypt::LE ':errors', ':keys';
 $|=1;
-plan tests => 55;
+plan tests => 59;
 
 my $le = Crypt::LE->new(autodir => 0);
+sub line { my $l = shift; $l=~s/[\r\n]//sg if $l; $l }
 my $usable_csr = <<EOF;
 -----BEGIN CERTIFICATE REQUEST-----
 MIIC1TCCAb0CAQAwTzEcMBoGA1UEAxMTZXhhbXBsZS5ub25leGlzdGVudDEKMAgG
@@ -80,6 +81,7 @@ can_ok($le, 'csr');
 can_ok($le, 'csr_key');
 can_ok($le, 'set_account_email');
 can_ok($le, 'set_domains');
+can_ok($le, 'export_pfx');
 
 my $fh = File::Temp->new(SUFFIX => '.le', UNLINK => 1, EXLOCK => 0);
 
@@ -171,5 +173,13 @@ ok(($rv == ERROR or $rv == UNSUPPORTED), 'Generating ECC-based CSR (odd curve)')
 # Expiration checks against the invalid certificate and the one expiring in 2027.
 is($le->check_expiration(\'aaa'), undef, 'Checking invalid certificate expiration');
 ok(defined $le->check_expiration(\$usable_crt), 'Checking valid certificate expiration');
+
+# Format conversion checks (account for arbitrary wrap length).
+ok(line($le->der2pem($le->pem2der($usable_csr), 'CERTIFICATE REQUEST')) eq line($usable_csr), 'Checking unmodified CSR conversion');
+ok(line($le->der2pem($le->pem2der("$usable_csr\r\n\r\n"), 'CERTIFICATE REQUEST')) eq line($usable_csr), 'Checking modified CSR conversion');
+
+# Check export.
+$rv = $le->export_pfx();
+ok(($rv == UNSUPPORTED or $rv == INVALID_DATA), 'Exporting PFX with no password.');
 
 diag( "Testing Crypt::LE $Crypt::LE::VERSION, Setup methods, $^X" );
