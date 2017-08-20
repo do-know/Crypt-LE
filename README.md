@@ -22,22 +22,22 @@ With Windows you don't have to install anything if you want to use [Windows bina
 
 ### INSTALLATION
 
-**With CPANminus**
+#### With CPANminus
 
     cpanm Crypt::LE
-    
-**With CPAN**
+
+#### With CPAN
 
     cpan -i Crypt::LE
     
-**Manual installation**:
+#### Manual installation
 
 	perl Makefile.PL
 	make
 	make test
 	make install
 
-**Windows installation (with Strawberry Perl)**
+#### Windows installation (with Strawberry Perl)
 
     cpanm -f Log::Log4perl
     cpanm Crypt::LE
@@ -78,7 +78,7 @@ For more examples, logging configuration and all available parameters overview u
 
     le.pl --help
 
-### PFX/P12 SUPPORT
+### PFX/P12 SUPPORT (for IIS)
 
 Windows binaries include export functions into PFX/P12 format, which is normally required by IIS. The export (in addition to saving certificates in PEM format) can be activated by
 specifying a PFX password with `--export-pfx` option.
