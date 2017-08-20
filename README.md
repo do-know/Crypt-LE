@@ -6,6 +6,23 @@ This module provides the functionality necessary to use Let's Encrypt API and ge
 
 **Note:** If you do not need the automation and the flexibility this package offers, and just want to get a free SSL certificate without installing anything, you can do that online with **[Free SSL Certificate Wizard](https://zerossl.com/#certificate)** (works on PC and mobiles, supports different languages:  EN, DE, FR, ES, RU, IT).
 
+Table of Contents
+-----------------
+
+  * [Compatibility](#compatibility)
+  * [Requirements](#requirements)
+  * [Installation](#installation)
+      * [With CPANminus](#with-cpanminus)
+      * [With CPAN](#with-cpan)
+      * [Manual installation](#manual-installation)
+      * [Windows installation](#windows-installation-with-strawberry-perl)
+  * [Client](#client)
+  * [PFX/P12 SUPPORT (for IIS)](#pfxp12-support-for-iis)
+  * [Renewals](#renewals)
+  * [Plugins](#plugins)
+  * [Custom logging](#custom-logging)
+  * [Support and Documentation](#support-and-documentation)
+
 ### COMPATIBILITY
 
 - The code has been successfully tested on more than 500 combinations of OS and Perl versions. It should install and run fine on Linux, FreeBSD, NetBSD, etc. It also works on Mac OS X and Windows (tested with ActiveState and Strawberry Perl).
