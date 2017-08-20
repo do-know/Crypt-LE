@@ -80,7 +80,7 @@ For more examples, logging configuration and all available parameters overview u
 
 ### PFX/P12 SUPPORT
 
-Windows binaries include export functions into PFX/P12 format, which is normally required by IIS. The export (in addition to saving certificate(s) in normal PEM format) can be activated by
+Windows binaries include export functions into PFX/P12 format, which is normally required by IIS. The export (in addition to saving certificates in PEM format) can be activated by
 specifying a PFX password with `--export-pfx` option.
 
 ### RENEWALS

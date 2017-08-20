@@ -21,7 +21,7 @@ LINUX: There are just 3 essential things which should be in place for the packag
 Linux distribution and it can be either "libssl-dev" or "openssl-devel". 
 
 WINDOWS: There are no requirements if Raspberry Perl is used. For ActiveState Perl you may need to install CPANminus
-first (business license users of ActiveState have direct access to Crypt::LE ppm).
+first (business license users of ActiveState have direct access to Crypt::LE ppm). You can also use Windows binaries.
 
 See https://zerossl.com/installation.html for more details.
 
@@ -41,6 +41,13 @@ INSTALLATION
   make
   make test
   make install
+
+- Windows installation (with Strawberry Perl)
+
+  cpanm -f Log::Log4perl
+  cpanm Crypt::LE
+
+Note: On Windows current version of the logging module needs to be installed with -f flag first if Strawberry Perl is used.
 
 PLUGINS
 
@@ -72,6 +79,11 @@ during the initial registration of the account. Later, shall you want to change 
 parameter to update your contact information.
 
 For example: le.pl --key account.key --update-contacts "one@email.address, another@email.address"
+
+PFX/P12 SUPPORT
+
+Windows binaries include export functions into PFX/P12 format, which is normally required by IIS. The export (in addition to saving certificates in
+PEM format) can be activated by specifying a PFX password with '--export-pfx' option.
 
 SUPPORT AND DOCUMENTATION
 

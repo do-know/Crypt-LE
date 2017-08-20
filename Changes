@@ -1,5 +1,10 @@
 Revision history for Crypt-LE
 
+0.26    20 August 2017
+        - Updated dependencies list for the old systems.
+        - Windows binaries now provide PE metadata.
+        - Minor documentation changes.
+
 0.25    19 August 2017
         - Added experimental support for PFX/P12 export (only available for Windows binaries).
         - Dropped Crypt::Format dependency to allow for cross-platform CSR loading.
