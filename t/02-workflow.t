@@ -33,7 +33,7 @@ SKIP: {
     # registrations, so just making sure that interaction works.
 
     # Account for the fact that some test boxes return 'Network is unreachable' and that staging API might be down.
-    my $rv = ($le->directory() == OK or $le->error_details=~/(?:\bunreachable\b|<HTML>|\btimed?\b)/i) ? 1 : 0;
+    my $rv = ($le->directory() == OK or $le->error_details=~/\b(?:unreachable|<HTML>|known|timed?)\b/i) ? 1 : 0;
     ok($rv == 1, 'Loading resources directory ' . $le->error_details);
 
 }

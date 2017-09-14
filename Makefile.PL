@@ -3,32 +3,32 @@ require 5.006;
 use ExtUtils::MakeMaker;
 WriteMakefile
 (
-  'NAME' => 'Crypt::LE',
+  'PL_FILES' => {},
   'VERSION_FROM' => 'lib/Crypt/LE.pm',
+  'NAME' => 'Crypt::LE',
+  'INSTALLDIRS' => 'site',
   'EXE_FILES' => [
                    'script/le.pl'
                  ],
-  'PL_FILES' => {},
-  'INSTALLDIRS' => 'site',
   'PREREQ_PM' => {
+                   'Time::Seconds' => 0,
+                   'MIME::Base64' => '3.11',
+                   'File::Temp' => 0,
+                   'Crypt::OpenSSL::Bignum' => '0.06',
                    'Convert::ASN1' => '0.2',
-                   'Module::Load' => '0.28',
-                   'IO::File' => '1.13',
+                   'Net::SSLeay' => '1.49',
                    'Crypt::OpenSSL::RSA' => '0.28',
+                   'Scalar::Util' => 0,
+                   'Digest::SHA' => 0,
+                   'Time::Piece' => '1.27',
                    'Test::More' => 0,
                    'HTTP::Tiny' => '0.042',
-                   'Log::Log4perl' => '1.27',
-                   'File::Temp' => 0,
-                   'Encode' => 0,
-                   'Digest::SHA' => 0,
-                   'MIME::Base64' => '3.11',
-                   'Scalar::Util' => 0,
-                   'Crypt::OpenSSL::Bignum' => '0.06',
-                   'JSON::MaybeXS' => '1.003005',
-                   'Time::Piece' => '1.27',
-                   'Net::SSLeay' => '1.49',
                    'IO::Socket::SSL' => '1.42',
-                   'Time::Seconds' => 0
+                   'Encode' => 0,
+                   'Module::Load' => '0.28',
+                   'IO::File' => '1.13',
+                   'Log::Log4perl' => '1.27',
+                   'JSON::MaybeXS' => '1.003005'
                  }
 )
 ;

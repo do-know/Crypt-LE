@@ -13,7 +13,7 @@ use MIME::Base64 'encode_base64url';
 use Crypt::LE ':errors', ':keys';
 use utf8;
 
-my $VERSION = '0.26';
+my $VERSION = '0.27';
 
 exit main();
 
@@ -92,6 +92,10 @@ sub work {
         $opt->{'logger'}->info("Loading a CSR from $opt->{'csr'}");
         $le->load_csr($opt->{'csr'}, $opt->{'domains'}) == OK or return _error("Could not load a CSR: " . $le->error_details);
         return _error("For multi-webroot path usage, the amount of paths given should match the amount of domain names listed.") if _path_mismatch($le, $opt);
+        # Load existing CSR key if specified, even if we have CSR (for example for PFX export).
+        if ($opt->{'csr-key'} and -e $opt->{'csr-key'}) {
+            return _error("Could not load existing CSR key from $opt->{'csr-key'} - " . $le->error_details) if $le->load_csr_key($opt->{'csr-key'});
+        }
     } else {
         return _error("For multi-webroot path usage, the amount of paths given should match the amount of domain names listed.") if _path_mismatch($le, $opt);
         $opt->{'logger'}->info("Generating a new CSR for domains $opt->{'domains'}");

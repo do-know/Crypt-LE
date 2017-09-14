@@ -4,7 +4,7 @@ use 5.006;
 use strict;
 use warnings;
 
-our $VERSION = '0.26';
+our $VERSION = '0.27';
 
 =head1 NAME
 
@@ -12,7 +12,7 @@ Crypt::LE - Let's Encrypt API interfacing module and client.
 
 =head1 VERSION
 
-Version 0.26
+Version 0.27
 
 =head1 SYNOPSIS
 
