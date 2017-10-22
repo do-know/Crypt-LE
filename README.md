@@ -18,7 +18,7 @@ Table of Contents
       * [Windows installation](#windows-installation-with-strawberry-perl)
   * [Client](#client)
   * [PFX/P12 (IIS) support](#pfxp12-support-for-iis)
-  * [IDN (internationalized domain names) support](#international)
+  * [IDN (internationalized domain names) support](#idn-internationalized-domain-names-support)
   * [Renewals](#renewals)
   * [Contact details updates](#contact-details-updates)
   * [Plugins](#plugins)
@@ -95,7 +95,7 @@ For more examples, logging configuration and all available parameters overview u
 
     le.pl --help
 
-### PFX/P12 SUPPORT (for IIS)
+### PFX/P12 (IIS) SUPPORT
 
 Windows binaries include export functions into PFX/P12 format, which is normally required by IIS. The export (in addition to saving certificates in PEM format) can be activated by
 specifying a PFX password with `--export-pfx` option.
