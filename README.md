@@ -17,7 +17,7 @@ Table of Contents
       * [Manual installation](#manual-installation)
       * [Windows installation](#windows-installation-with-strawberry-perl)
   * [Client](#client)
-  * [PFX/P12 (IIS) support](#pfxp12-support-for-iis)
+  * [PFX/P12 (IIS) support](#pfxp12-iis-support)
   * [IDN (internationalized domain names) support](#idn-internationalized-domain-names-support)
   * [Renewals](#renewals)
   * [Contact details updates](#contact-details-updates)
