@@ -17,8 +17,10 @@ Table of Contents
       * [Manual installation](#manual-installation)
       * [Windows installation](#windows-installation-with-strawberry-perl)
   * [Client](#client)
-  * [PFX/P12 SUPPORT (for IIS)](#pfxp12-support-for-iis)
+  * [PFX/P12 (IIS) support](#pfxp12-support-for-iis)
+  * [IDN (internationalized domain names) support](#international)
   * [Renewals](#renewals)
+  * [Contact details updates](#contact-details-updates)
   * [Plugins](#plugins)
   * [Custom logging](#custom-logging)
   * [Support and Documentation](#support-and-documentation)
@@ -69,27 +71,25 @@ With `le.pl` you should be able to quickly get your SSL certificates issued. Run
 
 *_Usage example:_*
 
-    le.pl --key account.key --csr domain.csr --csr-key domain.key --crt domain.crt --domains  "www.domain.ext,domain.ext" --generate-missing
+    le.pl --key account.key --email "my@email.address" --csr domain.csr --csr-key domain.key --crt domain.crt --domains  "www.domain.ext,domain.ext" --generate-missing
 
-That will generate an account key and a CSR if they are missing. If any of those files exists, they will just be loaded, so it is safe to re-run the client. 
+That will generate an account key and a CSR if they are missing. If any of those files exists, they will just be loaded, so it is safe to re-run the client.
+
+Please note that --email parameter is only used for the initial registration. To update it later you can use --update-contacts option. Even though it is optional, you may want to have your email registered to receive certificate expiration notifications.
 
 *_To use HTTP verification and have challenge files created/removed automatically, you can use `--path` and `--unlink` parameters:_*
 
-    le.pl ... --path /some/path/to/.well-known/acme-challenge --unlink
+    le.pl --key account.key --email "my@email.address" --csr domain.csr --csr-key domain.key --crt domain.crt --domains "www.domain.ext,domain.ext" --generate-missing --unlink --path /some/path/.well-known/acme-challenge
+
+If `www.domain.ext` and `domain.ext` use different "webroots", you can specify those in --path parameter, as a comma-separated list as follows:
+
+    le.pl --key account.key --email "my@email.address" --csr domain.csr --csr-key domain.key --crt domain.crt --domains "www.domain.ext,domain.ext" --generate-missing --unlink --path /a/.well-known/acme-challenge,/b/.well-known/acme-challenge
+
+Please note that with multiple webroots specified, the amount of those should match the amount of domains listed. They will be used in the same order as the domains given and all of those folders should be writable.
 
 *_To use DNS verification of domain ownership, you can use `--handle-as` parameter:_*
 
      le.pl ... --handle-as dns
-
-If you are using IDN (internationalized domain names) and generating a certificate for those, you can either encode those into "punycode" form by yourself, or let the client do that for you. Please note that for the
-conversion to work properly you need to have correct locale settings on your system. For Linux-based systems you can check that with the "locale" command, for Windows make sure that "System locale" in the Control Panel is
-set correctly.
-
-**Note:** If you would like to receive expiration notifications for your domain, you can specify `--email` parameter and an appropriate email address
-during the initial registration of the account. Later, shall you want to change your email or specify more than one, you can use `--update-contacts`
-parameter to update your contact information. For example:
-
-    le.pl --key account.key --update-contacts "one@email.address, another@email.address"
 
 For more examples, logging configuration and all available parameters overview use `--help`:
 
@@ -99,6 +99,12 @@ For more examples, logging configuration and all available parameters overview u
 
 Windows binaries include export functions into PFX/P12 format, which is normally required by IIS. The export (in addition to saving certificates in PEM format) can be activated by
 specifying a PFX password with `--export-pfx` option.
+
+### IDN (INTERNATIONALIZED DOMAIN NAMES) SUPPORT
+
+If you are using IDN (Internationalized Domain Names) and generating a certificate for those, you can either encode those into "[punycode](https://www.punycoder.com/)" form by yourself, or let the client do that for you. Please note that for the
+conversion to work properly you need to have correct locale settings on your system. For Linux-based systems you can check that with the "locale" command, for Windows make sure that "System locale" in the Control Panel is
+set correctly.
 
 ### RENEWALS
 
@@ -112,6 +118,16 @@ The amount of days left is checked by either of two methods:
 
  * If the certificate (which name is used with --crt parameter) is available locally, then it will be loaded and checked.
  * If the certificate is not available locally (for example if you moved it to another server), then an attempt to connect to the domains listed in --domains or CSR will be made until the first successful response is received. The peer certificate will be then checked for expiration.
+ 
+### CONTACT DETAILS UPDATES
+
+If you would like to receive expiration notifications for your domain, you can specify `--email` parameter and an appropriate email address during the initial registration of the account. Later, shall you want to change your email or specify more than one, you can use `--update-contacts` parameter to update your contact information. For example:
+
+    le.pl --key account.key --update-contacts "one@email.address, another@email.address" --live
+
+To reset your contact details, please specify "none" as a value, as follows:
+
+    le.pl --key account.key --update-contacts "none" --live
 
 ### PLUGINS
 
@@ -128,6 +144,10 @@ Client options related to plugins are:
  * --complete-params
 
 Please note that parameters for `--handle-params` and `--complete-params` are expected to be valid JSON documents or to point to files containing valid JSON documents.
+
+Example of running the client with plugins (you can modify the source code of the provided Crypt::LE::Challenge::Simple and Crypt::LE::Complete::Simple):
+
+    le.pl --key account.key --email "my@email.address" --csr domain.csr --csr-key domain.key --crt domain.crt --domains "www.domain.ext,domain.ext" --generate-missing --handle-with Crypt::LE::Challenge::Simple --complete-with Crypt::LE::Complete::Simple
 
 ### CUSTOM LOGGING
 
