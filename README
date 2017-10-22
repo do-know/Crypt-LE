@@ -78,7 +78,9 @@ Note: If you would like to receive expiration notifications for your domain, you
 during the initial registration of the account. Later, shall you want to change your email or specify more than one, you can use --update-contacts
 parameter to update your contact information.
 
-For example: le.pl --key account.key --update-contacts "one@email.address, another@email.address"
+For example: le.pl --key account.key --update-contacts "one@email.address, another@email.address" --live
+
+To reset your contact details, please specify "none" as a value, as follows: le.pl --key account.key --update-contacts "none" --live
 
 PFX/P12 SUPPORT
 

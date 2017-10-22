@@ -13,7 +13,7 @@ use MIME::Base64 'encode_base64url';
 use Crypt::LE ':errors', ':keys';
 use utf8;
 
-my $VERSION = '0.27';
+my $VERSION = '0.28';
 
 exit main();
 
@@ -49,8 +49,7 @@ sub work {
         # Register.
         my $reg = _register($le, $opt);
         return $reg if $reg;
-        my @contacts = grep { $_ } split /\s*\,\s*/, $opt->{'update-contacts'};
-        return _error("Invalid contacts given.") unless @contacts;
+        my @contacts = (lc($opt->{'update-contacts'}) eq 'none') ? () : grep { $_ } split /\s*\,\s*/, $opt->{'update-contacts'};
         my @rejected = ();
         foreach (@contacts) {
             /^(\w+:)?(.+)$/;
@@ -622,7 +621,11 @@ g) To revoke a certificate:
 
 h) To update your contact details:
 
- le.pl --key account.key --update-contacts "one@example.com, two@example.com"
+ le.pl --key account.key --update-contacts "one@example.com, two@example.com" --live
+
+i) To reset your contact details:
+
+ le.pl --key account.key --update-contacts "none" --live
 
  ===============
  RENEWAL PROCESS

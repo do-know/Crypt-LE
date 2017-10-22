@@ -2,7 +2,7 @@ package Crypt::LE::Complete::Simple;
 use strict;
 use warnings;
 
-our $VERSION = '0.27';
+our $VERSION = '0.28';
 
 =head1 NAME
 

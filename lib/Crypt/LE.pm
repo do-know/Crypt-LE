@@ -4,7 +4,7 @@ use 5.006;
 use strict;
 use warnings;
 
-our $VERSION = '0.27';
+our $VERSION = '0.28';
 
 =head1 NAME
 
@@ -12,7 +12,7 @@ Crypt::LE - Let's Encrypt API interfacing module and client.
 
 =head1 VERSION
 
-Version 0.27
+Version 0.28
 
 =head1 SYNOPSIS
 
@@ -1430,6 +1430,11 @@ sub _csr {
          return _free(k => $pk, r => $req) unless Net::SSLeay::X509_NAME_add_entry_by_txt($n, $key, MBSTRING_UTF8, encode_utf8($attrib->{$key}));
     }
     return _free(k => $pk, r => $req) unless Net::SSLeay::X509_REQ_set_subject_name($req, $n);
+    # Handle old openssl and set the version explicitly unless it is set already to greater than v1 (0 value).
+    # NB: get_version will return 0 regardless of whether version is set to v1 or not set at all.
+    unless (Net::SSLeay::X509_REQ_get_version($req)) {
+        return _free(k => $pk, r => $req) unless Net::SSLeay::X509_REQ_set_version($req, 0);
+    }
     my $md = Net::SSLeay::EVP_get_digestbyname('sha256');
     return _free(k => $pk, r => $req) unless ($md and Net::SSLeay::X509_REQ_sign($req, $pk, $md));
     my @rv = (Net::SSLeay::PEM_get_string_X509_REQ($req), Net::SSLeay::PEM_get_string_PrivateKey($pk));
