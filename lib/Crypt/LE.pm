@@ -4,7 +4,7 @@ use 5.006;
 use strict;
 use warnings;
 
-our $VERSION = '0.28';
+our $VERSION = '0.28a';
 
 =head1 NAME
 
@@ -12,7 +12,7 @@ Crypt::LE - Let's Encrypt API interfacing module and client.
 
 =head1 VERSION
 
-Version 0.28
+Version 0.28a
 
 =head1 SYNOPSIS
 
@@ -630,7 +630,7 @@ sub directory {
     my $self = shift;
     unless ($self->{directory}) {
         my ($status, $content) = $self->_request("https://$self->{server}/directory");
-        if ($status == SUCCESS) {
+        if ($status == SUCCESS and $content and (ref $content eq 'HASH')) {
             $self->{directory} = $content;
             return $self->_status(OK, "Directory loaded successfully.");
         } else {

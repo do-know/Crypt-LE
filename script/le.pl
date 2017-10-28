@@ -13,7 +13,7 @@ use MIME::Base64 'encode_base64url';
 use Crypt::LE ':errors', ':keys';
 use utf8;
 
-my $VERSION = '0.28';
+my $VERSION = '0.28a';
 
 exit main();
 
@@ -33,7 +33,7 @@ sub work {
     my $rv = parse_options($opt);
     return $rv if $rv;
 
-    my $le = Crypt::LE->new(autodir => 0, debug => $opt->{'debug'}, live => $opt->{'live'}, logger => $opt->{'logger'});
+    my $le = Crypt::LE->new(autodir => 0, server => $opt->{'server'}, live => $opt->{'live'}, debug => $opt->{'debug'}, logger => $opt->{'logger'});
 
     if (-r $opt->{'key'}) {
         $opt->{'logger'}->info("Loading an account key from $opt->{'key'}");
@@ -229,7 +229,7 @@ sub parse_options {
     my $opt = shift;
     my $args = @ARGV;
 
-    GetOptions ($opt, 'key=s', 'csr=s', 'csr-key=s', 'domains=s', 'path=s', 'crt=s', 'email=s', 'curve=s', 'renew=i', 'issue-code=i',
+    GetOptions ($opt, 'key=s', 'csr=s', 'csr-key=s', 'domains=s', 'path=s', 'crt=s', 'email=s', 'curve=s', 'server=s', 'renew=i', 'issue-code=i',
         'handle-with=s', 'handle-as=s', 'handle-params=s', 'complete-with=s', 'complete-params=s', 'log-config=s', 'update-contacts=s', 'export-pfx=s',
         'generate-missing', 'generate-only', 'revoke', 'legacy', 'unlink', 'live', 'quiet', 'debug', 'help') || return _error("Use --help to see the usage examples.");
 
@@ -238,6 +238,14 @@ sub parse_options {
     return $rv if $rv;
 
     $opt->{'logger'}->info("[ ZeroSSL Crypt::LE client v$VERSION started. ]");
+
+    if ($opt->{'server'}) {
+        return _error("Unsupported protocol for the custom server URL: $1.") if ($opt->{'server'}=~s~^(.*?)://~~ and uc($1) ne 'HTTPS');
+        my $server = $opt->{'server'}; # For logging.
+        $opt->{'logger'}->warn("Remember to URL-escape special characters if you are using server URL with basic auth credentials.") if $server=~s~[^@/]*@~~;
+        $opt->{'logger'}->info("Custom server URL 'https://$server' is used.");
+        $opt->{'logger'}->warn("Note: 'live' option is ignored.") if $opt->{'live'};
+    }
 
     return _error("Incorrect parameters - need account key file name specified.") unless $opt->{'key'};
     if (-e $opt->{'key'}) {
@@ -691,6 +699,7 @@ EOF
 -complete-params <json|file> : JSON for the completion module (optional).
 -issue-code XXX              : Exit code to use on issuance/renewal (optional).
 -email <some@mail.address>   : Email for expiration notifications (optional).
+-server <url|host>           : Use custom server URL (optional).
 -update-contacts <emails>    : Update contact details.
 -export-pfx <password>       : Export PFX (Windows binaries only).
 -log-config <file>           : Configuration file for logging.
