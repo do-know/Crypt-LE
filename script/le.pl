@@ -68,6 +68,7 @@ sub work {
         return _error("Could not read the certificate file.") unless $crt;
         # Take the first certificate in file, disregard the issuer's one.
         $crt=~s/^(.*?-+\s*END CERTIFICATE\s*-+).*/$1/s;
+        return _error("Could not load the resource directory: " . $le->error_details) if $le->directory;
         my $rv = $le->revoke_certificate(\$crt);
         if ($rv == OK) {
             $opt->{'logger'}->info("Certificate has been revoked.");
@@ -231,7 +232,7 @@ sub parse_options {
 
     GetOptions ($opt, 'key=s', 'csr=s', 'csr-key=s', 'domains=s', 'path=s', 'crt=s', 'email=s', 'curve=s', 'server=s', 'renew=i', 'issue-code=i',
         'handle-with=s', 'handle-as=s', 'handle-params=s', 'complete-with=s', 'complete-params=s', 'log-config=s', 'update-contacts=s', 'export-pfx=s',
-        'generate-missing', 'generate-only', 'revoke', 'legacy', 'unlink', 'live', 'quiet', 'debug', 'help') || return _error("Use --help to see the usage examples.");
+        'generate-missing', 'generate-only', 'revoke', 'legacy', 'unlink', 'live', 'quiet', 'debug:i@', 'help') || return _error("Use --help to see the usage examples.");
 
     usage_and_exit($opt) unless ($args and !$opt->{'help'});
     my $rv = reconfigure_log($opt);
@@ -319,6 +320,7 @@ sub parse_options {
             $opt->{'complete-params'} = { path => $opt->{'path'}, unlink => $opt->{'unlink'} };
         }
     }
+    $opt->{'debug'} = scalar @{$opt->{'debug'}} if $opt->{'debug'};
     return;
 }
 
