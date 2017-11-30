@@ -13,7 +13,7 @@ use MIME::Base64 'encode_base64url';
 use Crypt::LE ':errors', ':keys';
 use utf8;
 
-my $VERSION = '0.29';
+my $VERSION = '0.30';
 
 exit main();
 
@@ -32,8 +32,7 @@ sub work {
     my $opt = shift;
     my $rv = parse_options($opt);
     return $rv if $rv;
-
-    my $le = Crypt::LE->new(autodir => 0, server => $opt->{'server'}, live => $opt->{'live'}, debug => $opt->{'debug'}, logger => $opt->{'logger'});
+    my $le = Crypt::LE->new(autodir => 0, server => $opt->{'server'}, live => $opt->{'live'}, version => $opt->{'api'}||0, debug => $opt->{'debug'}, logger => $opt->{'logger'});
 
     if (-r $opt->{'key'}) {
         $opt->{'logger'}->info("Loading an account key from $opt->{'key'}");
@@ -68,7 +67,10 @@ sub work {
         return $opt->{'error'}->("Could not read the certificate file.", 'CERTIFICATE_FILE_READ') unless $crt;
         # Take the first certificate in file, disregard the issuer's one.
         $crt=~s/^(.*?-+\s*END CERTIFICATE\s*-+).*/$1/s;
-        return $opt->{'error'}->("Could not load the resource directory: " . $le->error_details, 'RESOURCE_DIRECTORY_LOAD') if $le->directory;
+
+        # Register.
+        my $reg = _register($le, $opt);
+        return $reg if $reg;
         my $rv = $le->revoke_certificate(\$crt);
         if ($rv == OK) {
             $opt->{'logger'}->info("Certificate has been revoked.");
@@ -179,7 +181,7 @@ sub work {
     }
     $opt->{'logger'}->info("Requesting issuer's certificate.");
     if ($le->request_issuer_certificate()) {
-        $opt->{'logger'}->error("Could not download an issuer's certificate, try to download manually from " . $le->issuer_url);
+        $opt->{'logger'}->error("Could not download an issuer's certificate, " . ($le->issuer_url ? "try to download manually from " . $le->issuer_url : "the URL has not been provided."));
         $opt->{'logger'}->warn("Will be saving the domain certificate alone, not the full chain.");
         return $opt->{'error'}->("Failed to save the domain certificate file", 'CERTIFICATE_SAVE') if _write($opt->{'crt'}, $le->certificate);
     } else {
@@ -232,7 +234,7 @@ sub parse_options {
     my $opt = shift;
     my $args = @ARGV;
 
-    GetOptions ($opt, 'key=s', 'csr=s', 'csr-key=s', 'domains=s', 'path=s', 'crt=s', 'email=s', 'curve=s', 'server=s', 'config=s', 'renew=i', 'issue-code=i',
+    GetOptions ($opt, 'key=s', 'csr=s', 'csr-key=s', 'domains=s', 'path=s', 'crt=s', 'email=s', 'curve=s', 'server=s', 'api=i', 'config=s', 'renew=i', 'issue-code=i',
         'handle-with=s', 'handle-as=s', 'handle-params=s', 'complete-with=s', 'complete-params=s', 'log-config=s', 'update-contacts=s', 'export-pfx=s', 'tag-pfx=s',
         'generate-missing', 'generate-only', 'revoke', 'legacy', 'unlink', 'live', 'quiet', 'debug+', 'help') || return $opt->{'error'}->("Use --help to see the usage examples.", 'PARAMETERS_PARSE');
 
@@ -583,10 +585,11 @@ sub process_verification {
 sub process_challenge_dns {
     my ($challenge, $params) = @_;
     my $value = encode_base64url(sha256("$challenge->{token}.$challenge->{fingerprint}"));
+    my (undef, $host) = $challenge->{domain}=~/^(\*\.)?(.+)$/;
     print <<EOF;
 Challenge for '$challenge->{domain}' requires the following DNS record to be created:
-Host: _acme-challenge.$challenge->{domain}, type: TXT, value: $value
-Wait for DNS to update by checking it with the command: nslookup -q=TXT _acme-challenge.$challenge->{domain}
+Host: _acme-challenge.$host, type: TXT, value: $value
+Wait for DNS to update by checking it with the command: nslookup -q=TXT _acme-challenge.$host
 When you see a text record returned, press <Enter>
 EOF
     <STDIN>;
@@ -595,13 +598,14 @@ EOF
 
 sub process_verification_dns {
     my ($results, $params) = @_;
+    my (undef, $host) = $results->{domain}=~/^(\*\.)?(.+)$/;
     $results->{logger}->info("Processing the 'dns' verification for '$results->{domain}'");
     if ($results->{valid}) {
         $results->{'logger'}->info("Domain verification results for '$results->{domain}': success.");
     } else {
         $results->{'logger'}->error("Domain verification results for '$results->{domain}': error. " . $results->{'error'});
     }
-    $results->{'logger'}->info("You can now delete '_acme-challenge.$results->{domain}' DNS record");
+    $results->{'logger'}->info("You can now delete '_acme-challenge.$host' DNS record");
     1;
 }
 
@@ -757,6 +761,7 @@ EOF
 -issue-code XXX              : Exit code to use on issuance/renewal (optional).
 -email <some@mail.address>   : Email for expiration notifications (optional).
 -server <url|host>           : Use custom server URL (optional).
+-api <version>               : API version to use (optional).
 -update-contacts <emails>    : Update contact details.
 -export-pfx <password>       : Export PFX (Windows binaries only).
 -tag-pfx <tag>               : Tag PFX with a specific name.
