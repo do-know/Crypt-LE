@@ -23,6 +23,7 @@ Table of Contents
   * [Contact details updates](#contact-details-updates)
   * [Plugins](#plugins)
   * [Custom logging](#custom-logging)
+  * [Custom exit codes](#custom-exit-codes)
   * [Support and Documentation](#support-and-documentation)
 
 ### COMPATIBILITY
@@ -166,6 +167,15 @@ Client uses *Log::Log4perl* module for logging. You can easily configure it to l
      log4perl.appender.Screen.utf8 = 1
 
 Save the configuration into some file and then run `le.pl` with `--log-config` parameter specifying that configuration file name, for those settings to take effect.
+
+### CUSTOM EXIT CODES
+
+By default the client application produces a limited set of exit codes - 1 on help or unknown parameters and 255 in case of other errors. Additionally the case of attempting a renewal too early is not considered an error. This behaviour can be changed to assign custom exit codes to different errors (including setting an error code for an early renewal). 
+
+If you wish to change an exit code for a particular error, you need to find the associated message first and then assign some code via a config file. For example, say you are receiving an error message saying "Could not read the certificate file." and you want to assign an error code of 200 to it. If you you add `--debug` flag to the command line, that same error message would look as "\[ CERTIFICATE_FILE_READ \] Could not read the certificate file." If now you create a configuration file as shown below, running the same command as before with `--config name_of_your_configuration_file` will change the exit code for that error to 200:
+
+    \[errors\]
+    CERTIFICATE_FILE_READ = 200
 
 ### SUPPORT AND DOCUMENTATION
 
