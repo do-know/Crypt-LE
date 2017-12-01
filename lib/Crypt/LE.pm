@@ -4,7 +4,7 @@ use 5.006;
 use strict;
 use warnings;
 
-our $VERSION = '0.28a';
+our $VERSION = '0.29';
 
 =head1 NAME
 
@@ -1336,13 +1336,13 @@ Returns: OK | UNSUPPORTED | INVALID_DATA | ERROR.
 =cut
 
 sub export_pfx {
-    my ($self, $file, $pass, $cert, $key, $ca) = @_;
+    my ($self, $file, $pass, $cert, $key, $ca, $tag) = @_;
     my $unsupported = "PFX export is not supported (requires specific build of PKCS12 library for Windows).";
     return $self->_status(UNSUPPORTED, $unsupported) unless $pkcs12_available;
     return $self->_status(INVALID_DATA, "Password is required") unless $pass;
     my $pkcs12 = Crypt::OpenSSL::PKCS12->new();
     eval {
-        $pkcs12->create($cert, $key, $pass, $file, $ca, "ZeroSSL exported");
+        $pkcs12->create($cert, $key, $pass, $file, $ca, $tag || "ZeroSSL exported");
     };
     return $self->_status(UNSUPPORTED, $unsupported) if ($@ and $@=~/Usage/);
     return $self->_status(ERROR, $@) if $@;

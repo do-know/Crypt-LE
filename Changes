@@ -1,5 +1,10 @@
 Revision history for Crypt-LE
 
+0.29    01 December 2017
+        - Custom server support in the client (--server).
+        - Extended debug support in the client (--debug --debug).
+        - Configurable exit codes in the client (experimental).
+
 0.28    22 October 2017
         - Client now supports resetting contact details (--update-contacts "none").
         - Old openssl version compatibility added (RT #123255).

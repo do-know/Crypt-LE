@@ -13,13 +13,13 @@ use MIME::Base64 'encode_base64url';
 use Crypt::LE ':errors', ':keys';
 use utf8;
 
-my $VERSION = '0.28a';
+my $VERSION = '0.29';
 
 exit main();
 
 sub main {
     Log::Log4perl->easy_init({ utf8  => 1 });
-    my $opt = { logger => Log::Log4perl->get_logger(), e => encode_args() };
+    my $opt = { logger => Log::Log4perl->get_logger(), e => encode_args(), error => parse_config() };
     binmode(STDOUT, ":encoding(UTF-8)");
     if (my $rv = work($opt)) {
         $opt->{logger}->error($rv->{'msg'}) if $rv->{'msg'};
@@ -37,12 +37,12 @@ sub work {
 
     if (-r $opt->{'key'}) {
         $opt->{'logger'}->info("Loading an account key from $opt->{'key'}");
-        $le->load_account_key($opt->{'key'}) == OK or return _error("Could not load an account key: " . $le->error_details);
+        $le->load_account_key($opt->{'key'}) == OK or return $opt->{'error'}->("Could not load an account key: " . $le->error_details, 'ACCOUNT_KEY_LOAD');
     } else {
         $opt->{'logger'}->info("Generating a new account key");
-        $le->generate_account_key == OK or return _error("Could not generate an account key: " . $le->error_details);
+        $le->generate_account_key == OK or return $opt->{'error'}->("Could not generate an account key: " . $le->error_details, 'ACCOUNT_KEY_GENERATE');
         $opt->{'logger'}->info("Saving generated account key into $opt->{'key'}");
-        return _error("Failed to save an account key file") if _write($opt->{'key'}, $le->account_key);
+        return $opt->{'error'}->("Failed to save an account key file", 'ACCOUNT_KEY_SAVE') if _write($opt->{'key'}, $le->account_key);
     }
 
     if ($opt->{'update-contacts'}) {
@@ -57,25 +57,25 @@ sub work {
             my ($prefix, $data) = (lc($1||''), $2);
             push @rejected, $_ unless ($data=~/^[^\@]+\@[^\.]+\.[^\.]+/ and (!$prefix or ($prefix eq 'mailto:')));
         }
-        return _error("Unknown format for the contacts: " . join(", ", @rejected)) if @rejected;
-        return _error("Could not update contact details: " . $le->error_details) if $le->update_contacts(\@contacts);
+        return $opt->{'error'}->("Unknown format for the contacts: " . join(", ", @rejected), 'CONTACTS_FORMAT') if @rejected;
+        return $opt->{'error'}->("Could not update contact details: " . $le->error_details, 'CONTACTS_UPDATE') if $le->update_contacts(\@contacts);
         $opt->{'logger'}->info("Contact details have been updated.");
         return;
     }
 
     if ($opt->{'revoke'}) {
         my $crt = _read($opt->{'crt'});
-        return _error("Could not read the certificate file.") unless $crt;
+        return $opt->{'error'}->("Could not read the certificate file.", 'CERTIFICATE_FILE_READ') unless $crt;
         # Take the first certificate in file, disregard the issuer's one.
         $crt=~s/^(.*?-+\s*END CERTIFICATE\s*-+).*/$1/s;
-        return _error("Could not load the resource directory: " . $le->error_details) if $le->directory;
+        return $opt->{'error'}->("Could not load the resource directory: " . $le->error_details, 'RESOURCE_DIRECTORY_LOAD') if $le->directory;
         my $rv = $le->revoke_certificate(\$crt);
         if ($rv == OK) {
             $opt->{'logger'}->info("Certificate has been revoked.");
         } elsif ($rv == ALREADY_DONE) {
             $opt->{'logger'}->info("Certificate has been ALREADY revoked.");
         } else {
-            return _error("Problem with revoking certificate: " . $le->error_details);
+            return $opt->{'error'}->("Problem with revoking certificate: " . $le->error_details, 'CERTIFICATE_REVOKE');
         }
         return;
     }
@@ -90,29 +90,29 @@ sub work {
     }
     if (-r $opt->{'csr'}) {
         $opt->{'logger'}->info("Loading a CSR from $opt->{'csr'}");
-        $le->load_csr($opt->{'csr'}, $opt->{'domains'}) == OK or return _error("Could not load a CSR: " . $le->error_details);
-        return _error("For multi-webroot path usage, the amount of paths given should match the amount of domain names listed.") if _path_mismatch($le, $opt);
+        $le->load_csr($opt->{'csr'}, $opt->{'domains'}) == OK or return $opt->{'error'}->("Could not load a CSR: " . $le->error_details, 'CSR_LOAD');
+        return $opt->{'error'}->("For multi-webroot path usage, the amount of paths given should match the amount of domain names listed.", 'WEBROOT_MISMATCH') if _path_mismatch($le, $opt);
         # Load existing CSR key if specified, even if we have CSR (for example for PFX export).
         if ($opt->{'csr-key'} and -e $opt->{'csr-key'}) {
-            return _error("Could not load existing CSR key from $opt->{'csr-key'} - " . $le->error_details) if $le->load_csr_key($opt->{'csr-key'});
+            return $opt->{'error'}->("Could not load existing CSR key from $opt->{'csr-key'} - " . $le->error_details, 'CSR_KEY_LOAD') if $le->load_csr_key($opt->{'csr-key'});
         }
     } else {
-        return _error("For multi-webroot path usage, the amount of paths given should match the amount of domain names listed.") if _path_mismatch($le, $opt);
+        return $opt->{'error'}->("For multi-webroot path usage, the amount of paths given should match the amount of domain names listed.", 'WEBROOT_MISMATCH') if _path_mismatch($le, $opt);
         $opt->{'logger'}->info("Generating a new CSR for domains $opt->{'domains'}");
         if (-e $opt->{'csr-key'}) {
              # Allow using pre-existing key when generating CSR
-             return _error("Could not load existing CSR key from $opt->{'csr-key'} - " . $le->error_details) if $le->load_csr_key($opt->{'csr-key'});
+             return $opt->{'error'}->("Could not load existing CSR key from $opt->{'csr-key'} - " . $le->error_details, 'CSR_KEY_LOAD') if $le->load_csr_key($opt->{'csr-key'});
              $opt->{'logger'}->info("New CSR will be based on '$opt->{'csr-key'}' key");
         } else {
              $opt->{'logger'}->info("New CSR will be based on a generated key");
         }
         my ($type, $attr) = $opt->{'curve'} ? (KEY_ECC, $opt->{'curve'}) : (KEY_RSA, $opt->{'legacy'} ? 2048 : 4096);
-        $le->generate_csr($opt->{'domains'}, $type, $attr) == OK or return _error("Could not generate a CSR: " . $le->error_details);
+        $le->generate_csr($opt->{'domains'}, $type, $attr) == OK or return $opt->{'error'}->("Could not generate a CSR: " . $le->error_details, 'CSR_GENERATE');
         $opt->{'logger'}->info("Saving a new CSR into $opt->{'csr'}");
         return "Failed to save a CSR" if _write($opt->{'csr'}, $le->csr);
         unless (-e $opt->{'csr-key'}) {
             $opt->{'logger'}->info("Saving a new CSR key into $opt->{'csr-key'}");
-            return _error("Failed to save a CSR key") if _write($opt->{'csr-key'}, $le->csr_key);
+            return $opt->{'error'}->("Failed to save a CSR key", 'CSR_SAVE') if _write($opt->{'csr-key'}, $le->csr_key);
         }
     }
 
@@ -132,16 +132,18 @@ sub work {
                 last if (defined $opt->{'expires'});
             }
         }
-        return _error("Could not get the certificate expiration value, cannot renew.") unless (defined $opt->{'expires'});
+        return $opt->{'error'}->("Could not get the certificate expiration value, cannot renew.", 'EXPIRATION_GET') unless (defined $opt->{'expires'});
         if ($opt->{'expires'} > $opt->{'renew'}) {
+            # A bit specific case - this is not an error technically but some might want an error code.
+            # So the message is displayed on "info" level to prevent getting through "quiet" mode, but an error can still be set.
             $opt->{'logger'}->info("Too early for renewal, certificate expires in $opt->{'expires'} days.");
-            return;
+            return $opt->{'error'}->("", 'EXPIRATION_EARLY');
         }
         $opt->{'logger'}->info("Expiration threshold set at $opt->{'renew'} days, the certificate " . ($opt->{'expires'} < 0 ? "has already expired" : "expires in $opt->{'expires'} days") . " - will be renewing.");
     }
     
     if ($opt->{'email'}) {
-        return _error($le->error_details) if $le->set_account_email($opt->{'email'});
+        return $opt->{'error'}->($le->error_details, 'EMAIL_SET') if $le->set_account_email($opt->{'email'});
     }
 
     # Register.
@@ -154,39 +156,39 @@ sub work {
         $opt->{'logger'}->info("Received domain certificate, no validation required at this time.");
     } else {
         # If it's not an auth problem, but blacklisted domains for example - stop.
-        return _error("Error requesting certificate: " . $le->error_details) if $new_crt_status != AUTH_ERROR;
+        return $opt->{'error'}->("Error requesting certificate: " . $le->error_details, 'CERTIFICATE_GET') if $new_crt_status != AUTH_ERROR;
         # Add multi-webroot option to parameters passed if it is set.
         $opt->{'handle-params'}->{'multiroot'} = $opt->{'multiroot'} if $opt->{'multiroot'};
         # Handle DNS internally along with HTTP
         my ($challenge_handler, $verification_handler) = ($opt->{'handler'}, $opt->{'handler'});
         if (!$opt->{'handler'}) {
             if ($opt->{'handle-as'}) {
-                return _error("Only 'http' and 'dns' can be handled internally, use external modules for other verification types.") unless $opt->{'handle-as'}=~/^(http|dns)$/i;
+                return $opt->{'error'}->("Only 'http' and 'dns' can be handled internally, use external modules for other verification types.", 'VERIFICATION_METHOD') unless $opt->{'handle-as'}=~/^(http|dns)$/i;
                 if (lc($1) eq 'dns') {
                     ($challenge_handler, $verification_handler) = (\&process_challenge_dns, \&process_verification_dns);
                 }
             }
         }
-        return _error($le->error_details) if $le->request_challenge();
-        return _error($le->error_details) if $le->accept_challenge($challenge_handler || \&process_challenge, $opt->{'handle-params'}, $opt->{'handle-as'});
-        return _error($le->error_details) if $le->verify_challenge($verification_handler || \&process_verification, $opt->{'handle-params'}, $opt->{'handle-as'});
+        return $opt->{'error'}->($le->error_details, 'CHALLENGE_REQUEST') if $le->request_challenge();
+        return $opt->{'error'}->($le->error_details, 'CHALLENGE_ACCEPT') if $le->accept_challenge($challenge_handler || \&process_challenge, $opt->{'handle-params'}, $opt->{'handle-as'});
+        return $opt->{'error'}->($le->error_details, 'CHALLENGE_VERIFY') if $le->verify_challenge($verification_handler || \&process_verification, $opt->{'handle-params'}, $opt->{'handle-as'});
     }
     unless ($le->certificate) {
         $opt->{'logger'}->info("Requesting domain certificate.");
-        return _error($le->error_details) if $le->request_certificate();
+        return $opt->{'error'}->($le->error_details, 'CERTIFICATE_REQUEST') if $le->request_certificate();
     }
     $opt->{'logger'}->info("Requesting issuer's certificate.");
     if ($le->request_issuer_certificate()) {
         $opt->{'logger'}->error("Could not download an issuer's certificate, try to download manually from " . $le->issuer_url);
         $opt->{'logger'}->warn("Will be saving the domain certificate alone, not the full chain.");
-        return _error("Failed to save the domain certificate file") if _write($opt->{'crt'}, $le->certificate);
+        return $opt->{'error'}->("Failed to save the domain certificate file", 'CERTIFICATE_SAVE') if _write($opt->{'crt'}, $le->certificate);
     } else {
         unless ($opt->{'legacy'}) {
             $opt->{'logger'}->info("Saving the full certificate chain to $opt->{'crt'}.");
-            return _error("Failed to save the domain certificate file") if _write($opt->{'crt'}, $le->certificate . "\n" . $le->issuer . "\n");
+            return $opt->{'error'}->("Failed to save the domain certificate file", 'CERTIFICATE_SAVE') if _write($opt->{'crt'}, $le->certificate . "\n" . $le->issuer . "\n");
         } else {
             $opt->{'logger'}->info("Saving the domain certificate to $opt->{'crt'}.");
-            return _error("Failed to save the domain certificate file") if _write($opt->{'crt'}, $le->certificate);
+            return $opt->{'error'}->("Failed to save the domain certificate file", 'CERTIFICATE_SAVE') if _write($opt->{'crt'}, $le->certificate);
             $opt->{'crt'}=~s/\.[^\.]+$//;
             $opt->{'crt'}.='.ca';
             $opt->{'logger'}->info("Saving the issuer's certificate to $opt->{'crt'}.");
@@ -200,9 +202,9 @@ sub work {
             my $target_pfx = $opt->{'crt'};
             $target_pfx=~s/\.[^\.]*$//;
             $opt->{'logger'}->info("Exporting certificate to $target_pfx.pfx.");
-            return _error("Error exporting pfx: " . $le->error_details) if $le->export_pfx("$target_pfx.pfx", $opt->{'export-pfx'}, $le->certificate, $le->csr_key, $le->issuer);
+            return $opt->{'error'}->("Error exporting pfx: " . $le->error_details, 'CERTIFICATE_EXPORT') if $le->export_pfx("$target_pfx.pfx", $opt->{'export-pfx'}, $le->certificate, $le->csr_key, $le->issuer, $opt->{'tag-pfx'});
         } else {
-            return _error("Issuer's certificate is not available, skipping pfx export to avoid creating an invalid pfx.");
+            return $opt->{'error'}->("Issuer's certificate is not available, skipping pfx export to avoid creating an invalid pfx.", 'CERTIFICATE_EXPORT_ISSUER');
         }
     }
     if ($opt->{'complete-handler'}) {
@@ -218,7 +220,7 @@ sub work {
             $rv = $opt->{'complete-handler'}->complete($data, $opt->{'complete-params'});
         };
         if ($@ or !$rv) {
-            return _error("Completion handler " . ($@ ? "thrown an error: $@" : "did not return a true value"));
+            return $opt->{'error'}->("Completion handler " . ($@ ? "thrown an error: $@" : "did not return a true value"), 'COMPLETION_HANDLER');
         }
     }
     $opt->{'logger'}->info("===> NOTE: You have been using the test server for this certificate. To issue a valid trusted certificate add --live option.") unless $opt->{'live'};
@@ -230,9 +232,15 @@ sub parse_options {
     my $opt = shift;
     my $args = @ARGV;
 
-    GetOptions ($opt, 'key=s', 'csr=s', 'csr-key=s', 'domains=s', 'path=s', 'crt=s', 'email=s', 'curve=s', 'server=s', 'renew=i', 'issue-code=i',
-        'handle-with=s', 'handle-as=s', 'handle-params=s', 'complete-with=s', 'complete-params=s', 'log-config=s', 'update-contacts=s', 'export-pfx=s',
-        'generate-missing', 'generate-only', 'revoke', 'legacy', 'unlink', 'live', 'quiet', 'debug:i@', 'help') || return _error("Use --help to see the usage examples.");
+    GetOptions ($opt, 'key=s', 'csr=s', 'csr-key=s', 'domains=s', 'path=s', 'crt=s', 'email=s', 'curve=s', 'server=s', 'config=s', 'renew=i', 'issue-code=i',
+        'handle-with=s', 'handle-as=s', 'handle-params=s', 'complete-with=s', 'complete-params=s', 'log-config=s', 'update-contacts=s', 'export-pfx=s', 'tag-pfx=s',
+        'generate-missing', 'generate-only', 'revoke', 'legacy', 'unlink', 'live', 'quiet', 'debug+', 'help') || return $opt->{'error'}->("Use --help to see the usage examples.", 'PARAMETERS_PARSE');
+
+    if ($opt->{'config'}) {
+        return $opt->{'error'}->("Configuration file '$opt->{'config'}' is not readable", 'PARAMETERS_PARSE') unless -r $opt->{'config'};
+        my $rv = parse_config($opt);
+        return $opt->{'error'}->("Configuration file error: $rv" , 'PARAMETERS_PARSE') if $rv;
+    }
 
     usage_and_exit($opt) unless ($args and !$opt->{'help'});
     my $rv = reconfigure_log($opt);
@@ -241,44 +249,46 @@ sub parse_options {
     $opt->{'logger'}->info("[ ZeroSSL Crypt::LE client v$VERSION started. ]");
 
     if ($opt->{'server'}) {
-        return _error("Unsupported protocol for the custom server URL: $1.") if ($opt->{'server'}=~s~^(.*?)://~~ and uc($1) ne 'HTTPS');
+        return $opt->{'error'}->("Unsupported protocol for the custom server URL: $1.", 'CUSTOM_SERVER_URL') if ($opt->{'server'}=~s~^(.*?)://~~ and uc($1) ne 'HTTPS');
         my $server = $opt->{'server'}; # For logging.
         $opt->{'logger'}->warn("Remember to URL-escape special characters if you are using server URL with basic auth credentials.") if $server=~s~[^@/]*@~~;
         $opt->{'logger'}->info("Custom server URL 'https://$server' is used.");
         $opt->{'logger'}->warn("Note: 'live' option is ignored.") if $opt->{'live'};
     }
 
-    return _error("Incorrect parameters - need account key file name specified.") unless $opt->{'key'};
+    return $opt->{'error'}->("Incorrect parameters - need account key file name specified.", 'ACCOUNT_KEY_FILENAME_REQUIRED') unless $opt->{'key'};
     if (-e $opt->{'key'}) {
-        return _error("Account key file is not readable.") unless (-r $opt->{'key'});
+        return $opt->{'error'}->("Account key file is not readable.", 'ACCOUNT_KEY_NOT_READABLE') unless (-r $opt->{'key'});
     } else {
-        return _error("Account key file is missing and the option to generate missing files is not used.") unless $opt->{'generate-missing'};
+        return $opt->{'error'}->("Account key file is missing and the option to generate missing files is not used.", 'ACCOUNT_KEY_MISSING') unless $opt->{'generate-missing'};
     }
 
     unless ($opt->{'crt'} or $opt->{'generate-only'} or $opt->{'update-contacts'}) {
-        return _error("Please specify a file name for the certificate.");
+        return $opt->{'error'}->("Please specify a file name for the certificate.", 'CERTIFICATE_FILENAME_REQUIRED');
     }
 
     if ($opt->{'export-pfx'}) {
         if ($opt->{'crt'} and $opt->{'crt'}=~/\.pfx$/i) {
-            return _error("Please ensure that the extension of the certificate filename is different from '.pfx' to be able to additionally export the certificate in pfx form.");
+            return $opt->{'error'}->("Please ensure that the extension of the certificate filename is different from '.pfx' to be able to additionally export the certificate in pfx form.", 'CERTIFICATE_BAD_FILENAME_EXTENSION');
         }
         unless ($opt->{'csr-key'} and (-r $opt->{'csr-key'} or ($opt->{'generate-missing'} and ! -e $opt->{'csr'}))) {
-            return _error("Need either existing csr-key specified or having CSR file generated (via 'generate-missing') for PFX export to work");
+            return $opt->{'error'}->("Need either existing csr-key specified or having CSR file generated (via 'generate-missing') for PFX export to work", 'NEED_CSR_KEY_FOR_EXPORT');
         }
+    } elsif ($opt->{'tag-pfx'}) {
+        $opt->{'logger'}->warn("Option 'tag-pfx' makes no sense without 'export-pfx' - ignoring.");
     }
 
     if ($opt->{'revoke'}) {
-        return _error("Need a certificate file for revoke to work.") unless ($opt->{'crt'} and -r $opt->{'crt'});
-        return _error("Need an account key - revoke assumes you had a registered account when got the certificate.") unless (-r $opt->{'key'});
+        return $opt->{'error'}->("Need a certificate file for revoke to work.", 'NEED_CERTIFICATE_FOR_REVOKE') unless ($opt->{'crt'} and -r $opt->{'crt'});
+        return $opt->{'error'}->("Need an account key - revoke assumes you had a registered account when got the certificate.", 'NEED_ACCOUNT_KEY_FOR_REVOKE') unless (-r $opt->{'key'});
     } elsif (!$opt->{'update-contacts'}) {
-        return _error("Incorrect parameters - need CSR file name specified.") unless $opt->{'csr'};
+        return $opt->{'error'}->("Incorrect parameters - need CSR file name specified.", 'CSR_FILENAME_REQUIRED') unless $opt->{'csr'};
         if (-e $opt->{'csr'}) {
-            return _error("CSR file is not readable.") unless (-r $opt->{'csr'});
+            return $opt->{'error'}->("CSR file is not readable.", 'CSR_NOT_READABLE') unless (-r $opt->{'csr'});
         } else {
-            return _error("CSR file is missing and the option to generate missing files is not used.") unless $opt->{'generate-missing'};
-            return _error("CSR file is missing and CSR-key file name is not specified.") unless $opt->{'csr-key'};
-            return _error("Domain list should be provided to generate a CSR.") unless ($opt->{'domains'} and $opt->{'domains'}!~/^[\s\,]*$/);
+            return $opt->{'error'}->("CSR file is missing and the option to generate missing files is not used.", 'CSR_MISSING') unless $opt->{'generate-missing'};
+            return $opt->{'error'}->("CSR file is missing and CSR-key file name is not specified.", 'CSR_MISSING') unless $opt->{'csr-key'};
+            return $opt->{'error'}->("Domain list should be provided to generate a CSR.", 'DOMAINS_REQUIRED') unless ($opt->{'domains'} and $opt->{'domains'}!~/^[\s\,]*$/);
         }
 
         if ($opt->{'path'}) {
@@ -286,9 +296,9 @@ sub parse_options {
             foreach my $path (grep { $_ } split /\s*,\s*/, $opt->{'path'}) {
                 push @non_writable, $path unless (-d $path and -w _);
             }
-            return _error("Path to save challenge files into should be a writable directory for: " . join(', ', @non_writable)) if @non_writable;
+            return $opt->{'error'}->("Path to save challenge files into should be a writable directory for: " . join(', ', @non_writable), 'CHALLENGE_DIRECTORY_NOT_WRITABLE') if @non_writable;
         } elsif ($opt->{'unlink'}) {
-            return _error("Unlink option will have no effect without --path.");
+            return $opt->{'error'}->("Unlink option will have no effect without --path.", 'UNLINK_WITHOUT_PATH');
         }
 
         $opt->{'handle-as'} = $opt->{'handle-as'} ? lc($opt->{'handle-as'}) : 'http';
@@ -298,9 +308,9 @@ sub parse_options {
                 load $opt->{'handle-with'};
                 $opt->{'handler'} = $opt->{'handle-with'}->new();
             };
-            return _error("Cannot use the module to handle challenges with.") if $@;
+            return $opt->{'error'}->("Cannot use the module to handle challenges with.", 'CHALLENGE_MODULE_UNAVAILABLE') if $@;
             my $method = 'handle_challenge_' . $opt->{'handle-as'};
-            return _error("Module to handle challenges does not seem to support the challenge type of $opt->{'handle-as'}.") unless $opt->{'handler'}->can($method);
+            return $opt->{'error'}->("Module to handle challenges does not seem to support the challenge type of $opt->{'handle-as'}.", 'CHALLENGE_MODULE_UNSUPPORTED') unless $opt->{'handler'}->can($method);
             my $rv = _load_params($opt, 'handle-params');
             return $rv if $rv;
         } else {
@@ -312,15 +322,14 @@ sub parse_options {
                 load $opt->{'complete-with'};
                 $opt->{'complete-handler'} = $opt->{'complete-with'}->new();
             };
-            return _error("Cannot use the module to complete processing with.") if $@;
-            return _error("Module to complete processing with does not seem to support the required 'complete' method.") unless $opt->{'complete-handler'}->can('complete');
+            return $opt->{'error'}->("Cannot use the module to complete processing with.", 'COMPLETION_MODULE_UNAVAILABLE') if $@;
+            return $opt->{'error'}->("Module to complete processing with does not seem to support the required 'complete' method.", 'COMPLETION_MODULE_UNSUPPORTED') unless $opt->{'complete-handler'}->can('complete');
             my $rv = _load_params($opt, 'complete-params');
             return $rv if $rv;
         } else {
             $opt->{'complete-params'} = { path => $opt->{'path'}, unlink => $opt->{'unlink'} };
         }
     }
-    $opt->{'debug'} = scalar @{$opt->{'debug'}} if $opt->{'debug'};
     return;
 }
 
@@ -368,6 +377,57 @@ sub encode_args {
     return $@;
 }
 
+sub parse_config {
+    my ($opt) = @_;
+    unless ($opt) {
+        return sub {
+            return { code => 1, msg => shift }
+        }
+    }
+    if (my $config = _read($opt->{'config'})) {
+        # INI-like, simplified.
+        my ($cl, $section) = (0, '');
+        my $sections = {
+            errors => {
+                # NB: Early renewal stop is not considered an error by default.
+                EXPIRATION_EARLY => 0,
+            },
+        };
+        for (split /\r?\n/, $config) {
+            $cl++;
+            next if /^\s*(?:;|#)/;
+            if (/^\[\s*(\w*)\s*\]$/) {
+                $section = $1;
+                return "Invalid section at line $cl." unless ($section and $sections->{$section});
+            } else {
+                return "Invalid line $cl - outside of section." unless $section;
+                return "Invalid line $cl - not a key/value." unless /^\s*(\w+)\s*=\s*([^"'\;\#].*)$/;
+                my ($key, $val) = ($1, $2);
+                $val=~s/\s*(?:;|#).*$//;
+                $sections->{$section}->{$key} = $val;
+            }
+        }
+        # Process errors section.
+        my $debug = $opt->{'debug'};
+        my $errors = delete $sections->{'errors'};
+        $opt->{'error'} = sub {
+            my ($msg, $code) = @_;
+            if ($code and $code!~/^\d+$/) {
+                # Unless associated with 0 exit value, in debug mode
+                # prefix the message with a passed down code.
+                unless (!$debug or (defined $errors->{$code} and !$errors->{$code})) {
+                    $msg = "[ $code ] " . ($msg || '');
+                }
+                $code = $errors->{$code};
+            }
+            return { msg => $msg, code => $code };
+        };
+        return;
+    } else {
+        return "Could not read config file.";
+    }
+}
+
 sub reconfigure_log {
     my $opt = shift;
     if ($opt->{'log-config'}) {
@@ -376,7 +436,7 @@ sub reconfigure_log {
         };
         if ($@ or !%{Log::Log4perl::appenders()}) {
             Log::Log4perl->easy_init({ utf8  => 1 });
-            return _error("Could not init logging with '$opt->{'log-config'}' file");
+            return $opt->{'error'}->("Could not init logging with '$opt->{'log-config'}' file", 'LOGGER_INIT');
         }
         $opt->{logger} = Log::Log4perl->get_logger();
     }
@@ -386,9 +446,9 @@ sub reconfigure_log {
 
 sub _register {
     my ($le, $opt) = @_;
-    return _error("Could not load the resource directory: " . $le->error_details) if $le->directory;
+    return $opt->{'error'}->("Could not load the resource directory: " . $le->error_details, 'RESOURCE_DIRECTORY_LOAD') if $le->directory;
     $opt->{'logger'}->info("Registering the account key");
-    return _error($le->error_details) if $le->register;
+    return $opt->{'error'}->($le->error_details, 'REGISTRATION') if $le->register;
     my $current_account_id = $le->registration_id || 'unknown';
     $opt->{'logger'}->info($le->new_registration ? "The key has been successfully registered. ID: $current_account_id" : "The key is already registered. ID: $current_account_id");
     $opt->{'logger'}->info("Make sure to check TOS at " . $le->tos) if ($le->tos_changed and $le->tos);
@@ -428,14 +488,14 @@ sub _load_params {
     return unless ($opt and $opt->{$type});
     if ($opt->{$type}!~/[\{\[\}\]]/) {
         $opt->{$type} = _read($opt->{$type});
-        return _error("Could not read the file with '$type'.") unless $opt->{$type};
+        return $opt->{'error'}->("Could not read the file with '$type'.", 'FILE_READ') unless $opt->{$type};
     }
     my $j = JSON->new->canonical()->allow_nonref();
     eval {
         $opt->{$type} = $j->decode($opt->{$type});
     };
     return ($@ or (ref $opt->{$type} ne 'HASH')) ? 
-        _error("Could not decode '$type'. Please make sure you are providing a valid JSON document and {} are in place." . ($opt->{'debug'} ? $@ : '')) : 0;
+        $opt->{'error'}->("Could not decode '$type'. Please make sure you are providing a valid JSON document and {} are in place." . ($opt->{'debug'} ? $@ : ''), 'JSON_DECODE') : 0;
 }
 
 sub _read {
@@ -458,11 +518,6 @@ sub _write {
     print $fh $content;
     $fh->close;
     return 0;
-}
-
-sub _error {
-    my ($msg, $code) = @_;
-    return { msg => $msg, code => $code || 255 };
 }
 
 sub process_challenge {
@@ -704,6 +759,8 @@ EOF
 -server <url|host>           : Use custom server URL (optional).
 -update-contacts <emails>    : Update contact details.
 -export-pfx <password>       : Export PFX (Windows binaries only).
+-tag-pfx <tag>               : Tag PFX with a specific name.
+-config <file>               : Configuration file for the client.
 -log-config <file>           : Configuration file for logging.
 -generate-missing            : Generate missing files (key, csr and csr-key).
 -generate-only               : Exit after generating the missing files.
