@@ -174,7 +174,7 @@ By default the client application produces a limited set of exit codes - 1 on he
 
 If you wish to change an exit code for a particular error, you need to find the associated message first and then assign some code via a config file. For example, say you are receiving an error message saying "Could not read the certificate file." and you want to assign an error code of 200 to it. If you you add `--debug` flag to the command line, that same error message would look as "\[ CERTIFICATE_FILE_READ \] Could not read the certificate file." If now you create a configuration file as shown below, running the same command as before with `--config name_of_your_configuration_file` will change the exit code for that error to 200:
 
-    \[errors\]
+    [errors]
     CERTIFICATE_FILE_READ = 200
 
 ### SUPPORT AND DOCUMENTATION
