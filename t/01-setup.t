@@ -90,7 +90,7 @@ ok($le->set_domains('http://some.domain') == INVALID_DATA, 'Setting domain names
 ok($le->set_domains('10.0.0.100') == INVALID_DATA, 'Setting domain names with unsupported entity type (IP)');
 ok($le->set_domains('a@b.c') == INVALID_DATA, 'Setting domain names with unsupported entity type (email)');
 ok($le->set_domains('abc') == INVALID_DATA, 'Setting domain names with unsupported entity type (dotless name)');
-ok($le->set_domains('*.domain.example') == INVALID_DATA, 'Setting domain names with unsupported entity type (wildcard)');
+ok($le->set_domains('*.domain.example') == OK, 'Setting domain names with the wildcard');
 ok($le->set_domains('a.dom, b.dom') == OK, 'Setting domain names with a string');
 ok($le->set_domains([ qw<a.dom b.dom x.dom> ]) == OK, 'Setting domain names with an array ref');
 ok(@{$le->domains()} == 3, 'Checking the domain names set');
@@ -154,7 +154,7 @@ ok($le->generate_csr('http://some.domain') == INVALID_DATA, 'Generating CSR for 
 ok($le->generate_csr('10.0.0.100') == INVALID_DATA, 'Generating CSR for unsupported entity type (IP)');
 ok($le->generate_csr('a@b.c') == INVALID_DATA, 'Generating CSR for unsupported entity type (email)');
 ok($le->generate_csr('abc') == INVALID_DATA, 'Generating CSR for unsupported entity type (dotless name)');
-ok($le->generate_csr('*.domain.example') == INVALID_DATA, 'Generating CSR for unsupported entity type (wildcard)');
+ok($le->generate_csr('*.domain.example') == OK, 'Generating CSR for the wildcard domain');
 
 # Re-use previously generated key/CSR for RSA checks
 ok($le->generate_csr('odd.domain', KEY_RSA) == OK, 'Generating RSA-based CSR (default)');

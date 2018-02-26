@@ -4,7 +4,7 @@ use warnings;
 use Digest::SHA 'sha256';
 use MIME::Base64 'encode_base64url';
 
-our $VERSION = '0.29';
+our $VERSION = '0.30';
 
 =head1 NAME
 
@@ -57,9 +57,10 @@ sub handle_challenge_dns {
     # You can use external logger if it has been provided.
     $challenge->{logger}->info("Processing the 'dns' challenge for '$challenge->{domain}' with " . __PACKAGE__) if $challenge->{logger};
     my $value = encode_base64url(sha256("$challenge->{token}.$challenge->{fingerprint}"));
+    my (undef, $host) = $challenge->{domain}=~/^(\*\.)?(.+)$/;
     print "Challenge for '$challenge->{domain}' requires the following DNS record to be created:\n";
-    print "Host: _acme-challenge.$challenge->{domain}, type: TXT, value: $value\n";
-    print "Wait for DNS to update by checking it with the command: nslookup -q=TXT _acme-challenge.$challenge->{domain}\n";
+    print "Host: _acme-challenge.$host, type: TXT, value: $value\n";
+    print "Wait for DNS to update by checking it with the command: nslookup -q=TXT _acme-challenge.$host\n";
     print "When you see a text record returned, press <Enter>";
     <STDIN>;
     return 1;
@@ -86,6 +87,7 @@ sub handle_verification_tls {
 sub handle_verification_dns {
     my $self = shift;
     my ($results, $params) = @_;
+    my (undef, $host) = $results->{domain}=~/^(\*\.)?(.+)$/;
     # You can use external logger if it has been provided.
     $results->{logger}->info("Processing the 'dns' verification for '$results->{domain}' with " . __PACKAGE__) if $results->{logger};
     if ($results->{valid}) {
@@ -93,7 +95,7 @@ sub handle_verification_dns {
     } else {
         print "Domain verification results for '$results->{domain}': error. $results->{error}\n";
     }
-    print "You can now delete '_acme-challenge.$results->{domain}' DNS record\n";
+    print "You can now delete '_acme-challenge.$host' DNS record\n";
     1;
 }
 

@@ -4,7 +4,7 @@ use 5.006;
 use strict;
 use warnings;
 
-our $VERSION = '0.29';
+our $VERSION = '0.30';
 
 =head1 NAME
 
@@ -12,7 +12,7 @@ Crypt::LE - Let's Encrypt API interfacing module and client.
 
 =head1 VERSION
 
-Version 0.28a
+Version 0.30
 
 =head1 SYNOPSIS
 
@@ -173,7 +173,6 @@ our @EXPORT_OK = (qw<OK READ_ERROR LOAD_ERROR INVALID_DATA DATA_MISMATCH UNSUPPO
 our %EXPORT_TAGS = ( 'errors' => [ @EXPORT_OK[0..9] ], 'keys' => [ @EXPORT_OK[10..11] ] );
 
 my $pkcs12_available = 0;
-my $header = 'replay-nonce';
 my $j = JSON->new->canonical()->allow_nonref();
 my $url_safe = qr/^[-_A-Za-z0-9]+$/; # RFC 4648 section 5.
 my $flag_rfc22536_utf8 = (XN_FLAG_RFC2253) & (~ ASN1_STRFLGS_ESC_MSB);
@@ -221,6 +220,12 @@ GeneralName ::= CHOICE {
 }
 >);
 
+my $compat = {
+    newAccount	=> 'new-reg',
+    newOrder	=> 'new-cert',
+    revokeCert	=> 'revoke-cert',
+};
+
 =head1 METHODS (API Setup)
 
 The following methods are provided for the API setup. Please note that account key setup by default requests the resource directory from Let's Encrypt servers.
@@ -260,6 +265,10 @@ Enables automatic retrieval of the resource directory (required for normal API p
 Specifies the time in seconds to wait before Let's Encrypt servers are checked for the challenge verification results again. By default set to 2 seconds.
 Non-integer values are supported (so for example you can set it to 1.5 if you like).
 
+=item C<version>
+
+Enforces the API version to be used. If the response is not found to be compatible, an error will be returned. If not set, system will try to make an educated guess.
+
 =item C<try>
 
 Specifies the amount of retries to attempt while in 'pending' state and waiting for verification results response. By default set to 300, which combined 
@@ -285,6 +294,7 @@ sub new {
         debug   => 0,
         autodir => 1,
         delay   => 2,
+        version => 0,
         try     => 300,
     };
     foreach my $key (keys %{$self}) {
@@ -293,7 +303,13 @@ sub new {
     # Init UA
     $self->{ua} = HTTP::Tiny->new( agent => $self->{ua} || __PACKAGE__ . " v$VERSION", verify_SSL => 1 );
     # Init server
-    $self->{server} ||= $self->{live} ? 'acme-v01.api.letsencrypt.org' : 'acme-staging.api.letsencrypt.org';
+    unless ($self->{server}) {
+        if ($self->{version} > 1) {
+            $self->{server} = $self->{live} ? 'acme-v02.api.letsencrypt.org' : 'acme-staging-v02.api.letsencrypt.org';
+        } else {
+            $self->{server} = $self->{live} ? 'acme-v01.api.letsencrypt.org' : 'acme-staging.api.letsencrypt.org';
+        }
+    }
     # Init logger
     $self->{logger} = $params{logger} if ($params{logger} and blessed $params{logger});
     bless $self, $class;
@@ -542,6 +558,32 @@ sub set_domains {
     return $self->_status(OK, "Domains list is set");
 }
 
+=head2 set_version($version)
+
+Sets the API version to be used. To pick the version automatically, use 0, other accepted values are currently 1 and 2.
+
+Returns: OK | INVALID_DATA.
+
+=cut
+
+sub set_version {
+    my ($self, $version) = @_;
+    return $self->_status(INVALID_DATA, "Unsupported API version") unless (defined $version and $version=~/^\d+$/ and $version <= 2);
+    $self->{version} = $version;
+    return $self->_status(OK, "API version is set to $version.");
+}
+
+=head2 version()
+
+Returns: The API version currently used (1 or 2). If 0 is returned, it means it is set to automatic detection and the directory has not yet been retrieved.
+
+=cut
+
+sub version {
+    my $self = shift;
+    return $self->{version};
+}
+
 #====================================================================================================
 # API Setup helpers
 #====================================================================================================
@@ -604,7 +646,7 @@ sub _get_list {
 
 sub _verify_list {
     my ($self, $list) = @_;
-    my @odd = grep { /[\s\[\{\(\<\*\@\>\)\}\]\/\\:]/ or /^[\d\.]+$/ or !/\./ } @{$list};
+    my @odd = grep { /[\s\[\{\(\<\@\>\)\}\]\/\\:]/ or /^[\d\.]+$/ or !/\./ } @{$list};
     return @odd ? \@odd : undef;
 }
 
@@ -616,28 +658,68 @@ sub _verify_list {
 
 The following methods are provided for the API workflow processing. All but C<accept_challenge()> methods interact with Let's Encrypt servers.
 
-=head2 directory()
+=head2 directory([ $reload ])
 
 Loads resource pointers from Let's Encrypt. This method needs to be called before the registration. It
 will be called automatically upon account key loading/generation unless you have reset the 'autodir'
-parameter when creating a new Crypt::LE instance.
+parameter when creating a new Crypt::LE instance. If any true value is provided as a parameter, reloads
+the directory even if it has been already retrieved (for example to pull another Nonce).
 
-Returns: OK | LOAD_ERROR.
+Returns: OK | INVALID_DATA | LOAD_ERROR.
 
 =cut
 
 sub directory {
-    my $self = shift;
-    unless ($self->{directory}) {
+    my ($self, $reload) = @_;
+    if (!$self->{directory} or $reload) {
         my ($status, $content) = $self->_request("https://$self->{server}/directory");
         if ($status == SUCCESS and $content and (ref $content eq 'HASH')) {
+            if ($content->{newAccount}) {
+                unless ($self->version) {
+                    $self->set_version(2);
+                } elsif ($self->version() != 2) {
+                    return $self->_status(INVALID_DATA, "Resource directory is not compatible with the version set (required v1, got v2).");
+                }
+                $self->_compat($content);
+            } elsif ($content->{'new-reg'}) {
+                unless ($self->version) {
+                    $self->set_version(1);
+                } elsif ($self->version() != 1) {
+                    return $self->_status(INVALID_DATA, "Resource directory is not compatible with the version set (required v2, got v1).");
+                }
+            } else {
+                return $self->_status(INVALID_DATA, "Resource directory does not contain expected fields.");
+            }
             $self->{directory} = $content;
+            unless ($self->{nonce}) {
+                if ($self->{directory}->{'newNonce'}) {
+                    $self->_request($self->{directory}->{'newNonce'}, undef, { method => 'head' });
+                    return $self->_status(LOAD_ERROR, "Could not retrieve the Nonce value.") unless $self->{nonce};
+                } else {
+                    return $self->_status(LOAD_ERROR, "Could not retrieve the Nonce value and there is no method to request it.")
+                }
+            }
             return $self->_status(OK, "Directory loaded successfully.");
         } else {
             return $self->_status(LOAD_ERROR, $content);
         }
     }
     return $self->_status(OK, "Directory has been already loaded.");
+}
+
+=head2 new_nonce()
+
+Requests a new nonce by forcing the directory reload. Picks up the value from the returned headers if it
+is present (API v1.0), otherwise uses newNonce method to get it (API v2.0) if one is provided.
+
+Returns: Nonce value or undef (if neither the value is in the headers nor newNonce method is available).
+
+=cut
+
+sub new_nonce {
+    my $self = shift;
+    $self->directory(1);
+    return $self->{nonce};
 }
 
 =head2 register()
@@ -655,11 +737,11 @@ sub register {
     my ($status, $content) = $self->_request($self->{directory}->{'new-reg'}, $req);
     $self->{directory}->{reg} = $self->{location} if $self->{location};
     $self->{$_} = undef for (qw<registration_id contact_details>);
-    if ($status == ALREADY_DONE) {
+    if ($status == $self->_compat_response(ALREADY_DONE)) {
         $self->{new_registration} = 0;
         $self->_debug("Key is already registered, reg path: $self->{directory}->{reg}.");
         ($status, $content) = $self->_request($self->{directory}->{'reg'}, { resource => 'reg' });
-        if ($status == ACCEPTED) {
+        if ($status == $self->_compat_response(ACCEPTED)) {
             $self->{registration_info} = $content;
             if ($self->{links} and $self->{links}->{'terms-of-service'} and (!$content->{agreement} or ($self->{links}->{'terms-of-service'} ne $content->{agreement}))) {
                 $self->_debug($content->{agreement} ? "You need to accept TOS" : "TOS has changed, you may need to accept it again.");
@@ -700,7 +782,7 @@ sub accept_tos {
     my $self = shift;
     return $self->_status(OK, "TOS has NOT been changed, no need to accept again.") unless $self->tos_changed;
     my ($status, $content) = $self->_request($self->{directory}->{'reg'}, { resource => 'reg', agreement => $self->{links}->{'terms-of-service'} });
-    return ($status == ACCEPTED) ? $self->_status(OK, "Accepted TOS.") : $self->_status(ERROR, $content);
+    return ($status == $self->_compat_response(ACCEPTED)) ? $self->_status(OK, "Accepted TOS.") : $self->_status(ERROR, $content);
 }
 
 =head2 update_contacts($array_ref)
@@ -717,7 +799,7 @@ sub update_contacts {
     return $self->_status(INVALID_DATA, "Invalid call parameters.") unless ($contacts and (ref $contacts eq 'ARRAY'));
     my @set = map { /^\w+:/ ? $_ : "mailto:$_" } @{$contacts};
     my ($status, $content) = $self->_request($self->{directory}->{'reg'}, { resource => 'reg', contact => \@set });
-    return ($status == ACCEPTED) ? $self->_status(OK, "Email has been updated.") : $self->_status(ERROR, $content);
+    return ($status == $self->_compat_response(ACCEPTED)) ? $self->_status(OK, "Email has been updated.") : $self->_status(ERROR, $content);
 }
 
 =head2 request_challenge()
@@ -733,18 +815,33 @@ sub request_challenge {
     my $self = shift;
     $self->_status(ERROR, "No domains are set.") unless $self->{domains};
     my ($domains_requested, %domains_failed);
+    # For v2.0 API the 'new-authz' is optional. However, authz set is provided via newOrder request (also utilized by request_certificate call).
+    # We are keeping the flow compatible with older clients, so if that call has not been specifically made (as it would in le.pl), we do
+    # it at the point of requesting the challenge. Note that if certificate is already valid, we will skip most of the challenge-related
+    # calls, but will not be returning the cert early to avoid interrupting the established flow.
+    if ($self->version() > 1 and !$self->{authz}) {
+        my ($status, $content) = $self->_request($self->{directory}->{'new-cert'}, { resource => 'new-cert' });
+        if ($status == CREATED and $content->{'identifiers'} and $content->{'authorizations'}) {
+            map { $self->{authz}->{$_->{'value'}} = shift @{$content->{'authorizations'}} } @{$content->{'identifiers'}};
+        }
+    }
     foreach my $domain (@{$self->{loaded_domains}}) {
         if (defined $self->{domains}->{$domain}) {
             $self->_debug("Domain $domain " . ($self->{domains}->{$domain} ? "has been already validated, skipping." : "challenge has been already requested, skipping."));
             next;
         }
+        # If authz is not loaded and there's no method to request one - return an error.
+        unless ($self->{directory}->{'new-authz'} or ($self->{authz} and $self->{authz}->{$domain})) {
+            return $self->_status(ERROR, "Cannot request challenges - new-authz is not listed in the directory.");
+        }
         $self->_debug("Requesting challenge for domain $domain.");
-        my ($status, $content) = $self->_request($self->{directory}->{'new-authz'}, { resource => 'new-authz', identifier => { type => 'dns', value => $domain } });
+        my ($status, $content) = ($self->{authz} and $self->{authz}->{$domain}) ? $self->_request($self->{authz}->{$domain}) :
+            $self->_request($self->{directory}->{'new-authz'}, { resource => 'new-authz', identifier => { type => 'dns', value => $domain } });
         $domains_requested++;
-        if ($status == CREATED) {
+        if ($status == $self->_compat_response(CREATED)) {
             my $valid_challenge = 0;
             foreach my $challenge (@{$content->{challenges}}) {
-                unless ($challenge and (ref $challenge eq 'HASH') and $challenge->{type} and $challenge->{uri} and $challenge->{status}) {
+                unless ($challenge and (ref $challenge eq 'HASH') and $challenge->{type} and ($challenge->{url} or $challenge->{uri}) and $challenge->{status}) {
                     $self->_debug("Challenge for domain $domain does not contain required fields.");
                     next;
                 }
@@ -754,6 +851,7 @@ sub request_challenge {
                     next;
                 }
                 $valid_challenge = 1 if ($challenge->{status} eq 'valid');
+                $challenge->{uri} ||= $challenge->{url};
                 $self->{challenges}->{$domain}->{$type} = $challenge;
             }
             if ($self->{challenges} and exists $self->{challenges}->{$domain}) {
@@ -858,6 +956,7 @@ sub accept_challenge {
         unless ($self->{challenges}->{$domain} and $self->{challenges}->{$domain}->{$type}) {
             $self->_debug("Could not find a challenge of type $type for domain $domain.");
             push @domains_failed, $domain;
+            next;
         }
         my $rv;
         my $callback_data = { domain => $domain, token => $self->{challenges}->{$domain}->{$type}->{token}, fingerprint => $self->{fingerprint}, logger => $self->{logger} };
@@ -959,6 +1058,7 @@ sub verify_challenge {
         return $self->_status(INVALID_DATA, "Passed parameters are not pointing to a hash.") if ($params and (ref $params ne 'HASH'));
     }
     my ($domains_verified, @domains_failed);
+    my $expected_status = $self->_compat_response(ACCEPTED);
     foreach my $domain (@{$self->{loaded_domains}}) {
         unless (defined $self->{domains}->{$domain} and !$self->{domains}->{$domain}) {
             $self->_debug($self->{domains}->{$domain} ? "Domain $domain has been already verified, skipping." : "Challenge has not yet been requested for domain $domain, skipping.");
@@ -973,16 +1073,17 @@ sub verify_challenge {
         my $token = $self->{challenges}->{$domain}->{$type}->{token};
         my ($status, $content) = $self->_request($self->{challenges}->{$domain}->{$type}->{uri}, { resource => 'challenge', keyAuthorization => "$token.$self->{fingerprint}" });
         my ($validated, $cb_reset) = (0, 0);
-        if ($status == ACCEPTED) {
+        if ($status == $expected_status) {
+            $content->{uri} ||= $content->{url};
             if ($content->{uri}) {
                 my $check = $content->{uri};
                 my $try = 0;
-                while ($status == ACCEPTED and $content and $content->{status} and $content->{status} eq 'pending') {
+                while ($status == $expected_status and $content and $content->{status} and $content->{status} eq 'pending') {
                     select(undef, undef, undef, $self->{delay});
                     ($status, $content) = $self->_request($check);
                     last if ($self->{try} and (++$try == $self->{try}));
                 }
-                if ($status == ACCEPTED and $content and $content->{status}) {
+                if ($status == $expected_status and $content and $content->{status}) {
                     if ($content->{status}=~/^(?:in)?valid$/) {
                         if ($content->{status} eq 'valid') {
                             $self->_debug("Domain $domain has been verified successfully.");
@@ -1041,8 +1142,50 @@ sub request_certificate {
     my $self = shift;
     return $self->_status(ERROR, "CSR is missing, make sure it has been either loaded or generated.") unless $self->{csr};
     my $csr = encode_base64url($self->pem2der($self->{csr}));
+    delete $self->{authz};
     my ($status, $content) = $self->_request($self->{directory}->{'new-cert'}, { resource => 'new-cert', csr => $csr });
     if ($status == CREATED) {
+        if (ref $content eq 'HASH' and $content->{'identifiers'} and $content->{'authorizations'}) {
+            # v2. Let's attempt to finalize the order immediately.
+            map { $self->{authz}->{$_->{'value'}} = shift @{$content->{'authorizations'}} } @{$content->{'identifiers'}};
+            my ($check, $ready) = ($content->{'finalize'}, 0);
+            if ($check) {
+                ($status, $content) = $self->_request($check, { csr => $csr });
+                my $try = 0;
+                while ($status == SUCCESS and $content and $content->{status} and $content->{status} eq 'processing') {
+                    select(undef, undef, undef, $self->{delay});
+                    ($status, $content) = $self->_request($check, { csr => $csr });
+                    last if ($self->{try} and (++$try == $self->{try}));
+                }
+                if ($status == SUCCESS and $content and $content->{status}) {
+                    if ($content->{status} eq 'valid') {
+                        if ($content->{certificate}) {
+                            $self->_debug("The certificate is ready for download at $content->{certificate}.");
+                            ($status, $content) = $self->_request($content->{certificate});
+                            return $self->_status(ERROR, "Certificate could not be downloaded from $content->{certificate}.") unless ($status == SUCCESS);
+                            # In v2 certificate is returned along with the chain.
+                            $ready = 1;
+                            if ($content=~/(\n\-+END CERTIFICATE\-+)[\s\r\n]+(.+)/s) {
+                                $self->_debug("Certificate is separated from the chain.");
+                                $self->{issuer} = $self->_convert($2, 'CERTIFICATE');
+                                $content = $` . $1;
+                            }
+                        } else {
+                            return $self->_status(ERROR, "The certificate is ready, but there was no download link provided.");
+                        }
+                    } elsif ($content->{status} eq 'invalid') {
+                        return $self->_status(ERROR, "Certificate cannot be issued.");
+                    } elsif ($content->{status} eq 'pending') {
+                        return $self->_status(AUTH_ERROR, "Order already exists but not yet completed.");
+                    } else {
+                        return $self->_status(ERROR, "Unknown order status: $content->{status}.");
+                    }
+                } else {
+                    return $self->_status(AUTH_ERROR, "Could not finalize an order.");
+                }
+            }
+            return $self->_status(AUTH_ERROR, "Could not finalize an order.") unless $ready;
+        }
         $self->{certificate} = $self->_convert($content, 'CERTIFICATE');
         $self->{certificate_url} = $self->{location};
         $self->{issuer_url} = ($self->{links} and $self->{links}->{up}) ? $self->{links}->{up} : undef;
@@ -1061,6 +1204,7 @@ Returns: OK | ERROR.
 
 sub request_issuer_certificate {
     my $self = shift;
+    return $self->_status(OK, "Issuer's certificate has been already received.") if $self->issuer();
     return $self->_status(ERROR, "The URL of issuer certificate is not set.") unless $self->{issuer_url};
     my ($status, $content) = $self->_request($self->{issuer_url});
     if ($status == SUCCESS) {
@@ -1083,7 +1227,9 @@ sub revoke_certificate {
     my $file = shift;
     my $crt = $self->_file($file);
     return $self->_status(READ_ERROR, "Certificate reading error.") unless $crt;
-    my ($status, $content) = $self->_request($self->{directory}->{'revoke-cert'}, { resource => 'revoke-cert', certificate => encode_base64url($self->pem2der($crt)) });
+    my ($status, $content) = $self->_request($self->{directory}->{'revoke-cert'},
+                             { resource => 'revoke-cert', certificate => encode_base64url($self->pem2der($crt)) },
+                             { jwk => 0 });
     if ($status == SUCCESS) {
         return $self->_status(OK, "Certificate has been revoked.");
     } elsif ($status == ALREADY_DONE) {
@@ -1327,9 +1473,10 @@ sub der2pem {
     return ($der and $type) ? "-----BEGIN $type-----$/" . encode_base64($der) . "-----END $type-----" : undef;
 }
 
-=head2 export_pfx($file, $pass, $cert, $key, [ $ca ])
+=head2 export_pfx($file, $pass, $cert, $key, [ $ca ], [ $tag ])
 
 Exports given certificate, CA chain and a private key into a PFX/P12 format with a given password.
+Optionally you can specify a text to go into pfx instead of the default "ZeroSSL exported".
 
 Returns: OK | UNSUPPORTED | INVALID_DATA | ERROR.
 
@@ -1464,11 +1611,23 @@ sub _to_hex {
 
 sub _request {
     my $self = shift;
-    my ($url, $payload) = @_;
-    my $resp = $payload ? $self->{ua}->post($url, { content => $self->_jws($payload) }) : $self->{ua}->get($url);
+    my ($url, $payload, $opts) = @_;
+    unless ($url) {
+        my $rv = 'Resource directory does not contain expected fields.';
+        return wantarray ? (INVALID_DATA, $rv) : $rv;
+    }
+    $payload = $self->_translate($payload);
+    my $resp;
+    $opts ||= {};
+    my $method = lc($opts->{method} || 'get');
+    if ($payload or $method eq 'post') {
+        $resp = $payload ? $self->{ua}->post($url, { content => $self->_jws($payload, $url, $opts) }) : $self->{ua}->post($url);
+    } else {
+        $resp = $self->{ua}->$method($url);
+    }
     my $slurp = ($resp->{headers}->{'content-type'} and $resp->{headers}->{'content-type'}=~/^application\/(?:problem\+)?json/) ? 0 : 1;
     $self->_debug($slurp ? $resp->{headers} : $resp);
-    $self->{nonce} = $resp->{headers}->{$header};
+    $self->{nonce} = $resp->{headers}->{'replay-nonce'} if $resp->{headers}->{'replay-nonce'};
     my ($status, $rv) = ($resp->{status}, $resp->{content});
     unless ($slurp) {
         eval {
@@ -1495,12 +1654,21 @@ sub _jwk {
 
 sub _jws {
     my $self = shift;
-    my ($obj) = @_;
+    my ($obj, $url, $opts) = @_;
     return unless ($obj and ref $obj);
     my $json = encode_base64url($j->encode($obj));
-    my $header = encode_base64url('{"nonce":"' . $self->{nonce} . '"}');
+    my $protected = { alg => "RS256", jwk => $self->{jwk}, nonce => $self->{nonce} };
+    $opts ||= {};
+    if ($url and $self->version() > 1) {
+        if ($self->{directory}->{reg} and !$opts->{jwk}) {
+            $protected->{kid} = $self->{directory}->{reg};
+            delete $protected->{jwk};
+        }
+        $protected->{url} = $url;
+    }
+    my $header = encode_base64url($j->encode($protected));
     my $sig = encode_base64url($self->{key}->sign("$header.$json"));
-    my $jws = $j->encode({ header => { alg => "RS256", jwk => $self->{jwk} }, protected => $header, payload => $json, signature => $sig });
+    my $jws = $j->encode({ protected => $header, payload => $json, signature => $sig });
     return $jws;
 }
 
@@ -1514,6 +1682,34 @@ sub _links {
         $rv->{$2} = $1;
     }
     return $rv;
+}
+
+sub _compat {
+    my ($self, $content) = @_;
+    return unless $content;
+    foreach (keys %{$content}) {
+        if (my $name = $compat->{$_}) {
+            $content->{$name} = delete $content->{$_};
+        }
+    }
+}
+
+sub _compat_response {
+    my ($self, $code) = @_;
+    return ($self->version() == 2) ? SUCCESS : $code;
+}
+
+sub _translate {
+    my ($self, $req) = @_;
+    return $req if (!$req or $self->version() == 1 or !$req->{'resource'});
+    return $req unless my $res = delete $req->{'resource'};
+    if ($res eq 'new-reg' or $res eq 'reg') {
+        $req->{'termsOfServiceAgreed'} = \1 if delete $req->{'agreement'};
+    } elsif ($res eq 'new-cert') {
+        delete $req->{'csr'};
+        push @{$req->{'identifiers'}}, { type => 'dns', value => $_ } for @{$self->{loaded_domains}};
+    }
+    return $req;
 }
 
 sub _debug {
@@ -1654,7 +1850,7 @@ L<https://Do-Know.com/>
 
 =head1 LICENSE AND COPYRIGHT
 
-Copyright 2016-2017 Alexander Yezhov.
+Copyright 2016-2018 Alexander Yezhov.
 
 This program is free software; you can redistribute it and/or modify it
 under the terms of the Artistic License (2.0). You may obtain a

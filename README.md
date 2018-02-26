@@ -92,6 +92,12 @@ Please note that with multiple webroots specified, the amount of those should ma
 
      le.pl ... --handle-as dns
 
+*_To issue a wildcard certificate, use DNS verification and specify the domain in the following format: *.some.domain._*
+
+     le.pl ... --domains "*.some.domain" --handle-as dns --api 2
+
+Please note that at the moment wildcards are only supported by the v2.0 of the API, which might not be yet available live, but it is available in the testing environment.
+
 For more examples, logging configuration and all available parameters overview use `--help`:
 
     le.pl --help
@@ -208,7 +214,7 @@ You can also contribute the completion-handling modules under Crypt::LE::Complet
 
 ### LICENSE AND COPYRIGHT
 
-Copyright (C) 2016-2017 Alexander Yezhov
+Copyright (C) 2016-2018 Alexander Yezhov
 
 This program is free software; you can redistribute it and/or modify it
 under the terms of the the Artistic License (2.0). You may obtain a
