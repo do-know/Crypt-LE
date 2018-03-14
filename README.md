@@ -8,10 +8,17 @@ This module provides the functionality necessary to use Let's Encrypt API and ge
 
 **Note:** If you do not need the automation and the flexibility this package offers, and just want to get a free SSL certificate without installing anything, you can do that online with **[Free SSL Certificate Wizard](https://zerossl.com/#certificate)** (works on PC and mobiles, supports different languages:  EN, DE, FR, ES, RU, IT).
 
+#### COMPATIBILITY
+
+- The code has been successfully tested on more than 500 combinations of OS and Perl versions. It should install and run fine on Linux, FreeBSD, NetBSD, etc. It also works on Mac OS X and Windows (tested with ActiveState and Strawberry Perl).
+
+- If you are a Windows user, you can download portable **[Win32/Win64 binaries](https://github.com/do-know/Crypt-LE/releases)** (they work even on Windows XP and require NO installation).
+
+- In addition, you can use the latest **[Docker Image](https://hub.docker.com/r/zerossl/client/)** (lightweight non-root container).
+
 Table of Contents
 -----------------
 
-  * [Compatibility](#compatibility)
   * [Requirements](#requirements)
   * [Installation](#installation)
       * [With CPANminus](#with-cpanminus)
@@ -28,14 +35,6 @@ Table of Contents
   * [Custom logging](#custom-logging)
   * [Custom exit codes](#custom-exit-codes)
   * [Support and Documentation](#support-and-documentation)
-
-### COMPATIBILITY
-
-- The code has been successfully tested on more than 500 combinations of OS and Perl versions. It should install and run fine on Linux, FreeBSD, NetBSD, etc. It also works on Mac OS X and Windows (tested with ActiveState and Strawberry Perl).
-
-- If you are a Windows user, you can download portable **[Win32/Win64 binaries](https://github.com/do-know/Crypt-LE/releases)** (they work even on Windows XP and require NO installation).
-
-- In addition, you can use the latest **[Docker Image](https://hub.docker.com/r/zerossl/client/)** (lightweight non-root container).
 
 ### REQUIREMENTS
 
