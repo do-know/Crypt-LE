@@ -6,7 +6,7 @@ use Test::More;
 use File::Temp ();
 use Crypt::LE ':errors', ':keys';
 $|=1;
-plan tests => 59;
+plan tests => 60;
 
 my $le = Crypt::LE->new(autodir => 0);
 sub line { my $l = shift; $l=~s/[\r\n]//sg if $l; $l }
@@ -83,8 +83,6 @@ can_ok($le, 'set_account_email');
 can_ok($le, 'set_domains');
 can_ok($le, 'export_pfx');
 
-my $fh = File::Temp->new(SUFFIX => '.le', UNLINK => 1, EXLOCK => 0);
-
 ok($le->set_domains() == INVALID_DATA, 'Setting domain names with no value');
 ok($le->set_domains('http://some.domain') == INVALID_DATA, 'Setting domain names with unsupported entity type (URI)');
 ok($le->set_domains('10.0.0.100') == INVALID_DATA, 'Setting domain names with unsupported entity type (IP)');
@@ -95,8 +93,6 @@ ok($le->set_domains('a.dom, b.dom') == OK, 'Setting domain names with a string')
 ok($le->set_domains([ qw<a.dom b.dom x.dom> ]) == OK, 'Setting domain names with an array ref');
 ok(@{$le->domains()} == 3, 'Checking the domain names set');
 
-ok($le->load_account_key($fh->filename) == READ_ERROR, 'Loading non-existent key');
-
 my $rv = $le->generate_account_key();
 my $acceptable_rv = ($rv == OK or $rv == INVALID_DATA) ? 1 : 0;
 ok($acceptable_rv == 1, 'Generating account key');
@@ -106,20 +102,13 @@ if ($rv) {
 	while ($le->generate_account_key()) {}
 }
 ok($le->account_key, 'Getting account key');
-
-print $fh $le->account_key;
-$fh->flush;
-ok($le->load_account_key($fh->filename) == OK, "Reloading account key");
+my $account_to_load = $le->account_key;
 
 # Try setting the key from a variable rather than file
 my ($usable_key, $invalid_key) = ($le->account_key, '123456789');
 ok($le->load_account_key(\$usable_key) == OK, 'Setting a valid key from scalar');
 ok($le->load_account_key(\$invalid_key) == LOAD_ERROR, 'Setting an invalid key from scalar');
-$fh->close;
 
-$fh = File::Temp->new(SUFFIX => '.le', UNLINK => 1, EXLOCK => 0);
-
-ok($le->load_csr($fh->filename) == READ_ERROR, 'Loading non-existent CSR');
 my $broken_csr = '123456789';
 
 # Try setting CSR from a variable rather than file
@@ -137,17 +126,37 @@ ok($le->generate_csr('odd.domain,another.domain,yet.another.domain') == OK, 'Gen
 ok($le->csr, 'Retrieving generated CSR');
 ok($le->csr_key(), 'Retrieving the key used for CSR');
 
-print $fh $le->csr;
-$fh->flush;
-ok($le->load_csr($fh->filename) == OK, 'Reloading CSR without domains listed');
+my $csr_to_load = $le->csr;
+ok($le->load_csr(\$csr_to_load) == OK, 'Reloading CSR without domains listed');
 ok(join(',', @{$le->domains}) eq 'odd.domain,another.domain,yet.another.domain', 'Checking domain names order when those were NOT explicitly provided.');
-ok($le->load_csr($fh->filename, 'odd.domain,another.domain,yet.another.domain') == OK, 'Reloading CSR with matching domains listed in the same order');
-ok($le->load_csr($fh->filename, 'another.domain,yet.another.domain,odd.domain') == OK, 'Reloading CSR with matching domains listed in the different order');
+ok($le->load_csr(\$csr_to_load, 'odd.domain,another.domain,yet.another.domain') == OK, 'Reloading CSR with matching domains listed in the same order');
+ok($le->load_csr(\$csr_to_load, 'another.domain,yet.another.domain,odd.domain') == OK, 'Reloading CSR with matching domains listed in the different order');
 ok(join(',', @{$le->domains}) eq 'another.domain,yet.another.domain,odd.domain', 'Checking domain names order when those were explicitly provided.');
-ok($le->load_csr($fh->filename, 'another.domain,yet.another.domain') == DATA_MISMATCH, 'Reloading CSR with fewer domains listed');
-ok($le->load_csr($fh->filename, 'odd.domain,another.odd.domain,another.domain,yet.another.domain') == DATA_MISMATCH, 'Reloading CSR with more domains listed');
+ok($le->load_csr(\$csr_to_load, 'another.domain,yet.another.domain') == DATA_MISMATCH, 'Reloading CSR with fewer domains listed');
+ok($le->load_csr(\$csr_to_load, 'odd.domain,another.odd.domain,another.domain,yet.another.domain') == DATA_MISMATCH, 'Reloading CSR with more domains listed');
 ok(!defined $le->domains, 'Checking domain names reset on error.');
-$fh->close;
+
+SKIP: {
+
+    skip "Win Taint mode temp file", 4 if ($^O eq "MSWin32");
+
+    my $fh = File::Temp->new(SUFFIX => '.le', UNLINK => 1, EXLOCK => 0);
+    ok($le->load_account_key($fh->filename) == READ_ERROR, 'Loading non-existent key');
+
+    print $fh $account_to_load;
+    $fh->flush;
+    ok($le->load_account_key($fh->filename) == OK, "Reloading account key");
+    $fh->close;
+
+    $fh = File::Temp->new(SUFFIX => '.le', UNLINK => 1, EXLOCK => 0);
+    ok($le->load_csr($fh->filename) == READ_ERROR, 'Loading non-existent CSR');
+
+    print $fh $csr_to_load;
+    $fh->flush;
+    ok($le->load_csr($fh->filename) == OK, 'Reloading CSR without domains listed (file)');
+    $fh->close;
+
+}
 
 # Try creating CSR with unsupported names, use already known usable key to speed up the process
 ok($le->generate_csr('http://some.domain') == INVALID_DATA, 'Generating CSR for unsupported entity type (URI)');

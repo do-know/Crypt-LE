@@ -13,7 +13,7 @@ use MIME::Base64 'encode_base64url';
 use Crypt::LE ':errors', ':keys';
 use utf8;
 
-my $VERSION = '0.30';
+my $VERSION = '0.31';
 
 exit main();
 
@@ -678,21 +678,26 @@ e) To use basic DNS verification:
  le.pl --key account.key --csr domain.csr --csr-key domain.key --crt domain.crt
        --domains "www.domain.ext,domain.ext" --generate-missing --handle-as dns
 
-f) To just generate the keys and CSR:
+f) To issue a wildcard certificate, which requires DNS verification:
+
+ le.pl --key account.key --csr domain.csr --csr-key domain.key --crt domain.crt
+       --domains "*.domain.ext" --generate-missing --handle-as dns --api 2
+
+g) To just generate the keys and CSR:
 
  le.pl --key account.key --csr domain.csr --csr-key domain.key
        --domains "www.domain.ext,domain.ext" --generate-missing
        --generate-only
 
-g) To revoke a certificate:
+h) To revoke a certificate:
 
  le.pl --key account.key --crt domain.crt --revoke
 
-h) To update your contact details:
+i) To update your contact details:
 
  le.pl --key account.key --update-contacts "one@example.com, two@example.com" --live
 
-i) To reset your contact details:
+j) To reset your contact details:
 
  le.pl --key account.key --update-contacts "none" --live
 

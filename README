@@ -82,6 +82,14 @@ For example: le.pl --key account.key --update-contacts "one@email.address, anoth
 
 To reset your contact details, please specify "none" as a value, as follows: le.pl --key account.key --update-contacts "none" --live
 
+WILDCARD CERTIFICATES SUPPORT
+
+To issue a wildcard certificate, use DNS verification and specify the domain in the following format: *.some.domain
+
+For example: le.pl ... --domains "*.some.domain" --handle-as dns --api 2
+
+Please note that at the moment wildcards are only supported by the v2.0 of the API and they can only be issued if DNS verification is used.
+
 PFX/P12 SUPPORT
 
 Windows binaries include export functions into PFX/P12 format, which is normally required by IIS. The export (in addition to saving certificates in

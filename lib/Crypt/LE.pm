@@ -4,7 +4,7 @@ use 5.006;
 use strict;
 use warnings;
 
-our $VERSION = '0.30';
+our $VERSION = '0.31';
 
 =head1 NAME
 
@@ -12,7 +12,7 @@ Crypt::LE - Let's Encrypt API interfacing module and client.
 
 =head1 VERSION
 
-Version 0.30
+Version 0.31
 
 =head1 SYNOPSIS
 
@@ -143,6 +143,7 @@ Net::SSLeay::OpenSSL_add_ssl_algorithms();
 Net::SSLeay::OpenSSL_add_all_digests();
 our $keysize = 4096;
 our $keycurve = 'prime256v1';
+our $headers = { 'Content-type' => 'application/jose+json' };
 
 use constant {
     OK                     => 0,
@@ -1621,7 +1622,8 @@ sub _request {
     $opts ||= {};
     my $method = lc($opts->{method} || 'get');
     if ($payload or $method eq 'post') {
-        $resp = $payload ? $self->{ua}->post($url, { content => $self->_jws($payload, $url, $opts) }) : $self->{ua}->post($url);
+        $resp = $payload ? $self->{ua}->post($url, { headers => $headers, content => $self->_jws($payload, $url, $opts) }) :
+                           $self->{ua}->post($url, { headers => $headers });
     } else {
         $resp = $self->{ua}->$method($url);
     }
@@ -1704,7 +1706,8 @@ sub _translate {
     return $req if (!$req or $self->version() == 1 or !$req->{'resource'});
     return $req unless my $res = delete $req->{'resource'};
     if ($res eq 'new-reg' or $res eq 'reg') {
-        $req->{'termsOfServiceAgreed'} = \1 if delete $req->{'agreement'};
+        delete $req->{'agreement'};
+        $req->{'termsOfServiceAgreed'} = \1;
     } elsif ($res eq 'new-cert') {
         delete $req->{'csr'};
         push @{$req->{'identifiers'}}, { type => 'dns', value => $_ } for @{$self->{loaded_domains}};
