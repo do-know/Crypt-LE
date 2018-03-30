@@ -6,7 +6,7 @@ This module provides the functionality necessary to use Let's Encrypt API and ge
 
 > The client + library package is codenamed ZeroSSL with the project homepage at https://ZeroSSL.com
 
-**Note:** If you do not need the automation and the flexibility this package offers, and just want to get a free SSL certificate without installing anything, you can do that online with **[Free SSL Certificate Wizard](https://zerossl.com/#certificate)** (works on PC and mobiles, supports different languages:  EN, DE, FR, ES, RU, IT).
+**Note:** If you do not need the automation and the flexibility this package offers, and just want to get a free SSL certificate without installing anything, you can do that online with **[Free SSL Certificate Wizard](https://zerossl.com/#certificate)** (works on PC and mobiles, supports different languages:  EN, DE, FR, ES, RU, IT and also supports _wildcard certificates_ issuance).
 
 #### COMPATIBILITY
 
@@ -105,6 +105,10 @@ For more examples, logging configuration and all available parameters overview u
      le.pl ... --domains "*.some.domain" --handle-as dns --api 2
 
 Please note that at the moment wildcards are only supported by the v2.0 of the API and they can only be issued if DNS verification is used.
+
+**Important** - if you are issuing a wildcard certificate and also want a so-called "naked domain" ("some.domain") to be covered, list both of those names in the `domains` parameter. You will then need to create two TXT records with _identical_ names but different values - this is normal and this is how you should create them.
+
+     le.pl ... --domains "*.some.domain, some.domain" --handle-as dns --api 2
 
 ### PFX/P12 (IIS) SUPPORT
 
