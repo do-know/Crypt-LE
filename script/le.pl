@@ -13,7 +13,7 @@ use MIME::Base64 'encode_base64url';
 use Crypt::LE ':errors', ':keys';
 use utf8;
 
-my $VERSION = '0.31';
+my $VERSION = '0.32a';
 
 exit main();
 
@@ -128,10 +128,19 @@ sub work {
         }
         unless (defined $opt->{'expires'}) {
             $opt->{'logger'}->info("Checking certificate for expiration (website connection).");
-            foreach my $domain (@{$le->domains}) {
-                $opt->{'logger'}->info("Checking $domain");
-                $opt->{'expires'} = $le->check_expiration("https://$domain/");
-                last if (defined $opt->{'expires'});
+            if ($opt->{'renew-check'}) {
+                $opt->{'logger'}->info("Checking $opt->{'renew-check'}");
+                $opt->{'expires'} = $le->check_expiration("https://$opt->{'renew-check'}/");
+            } else {
+                my %seen;
+                # Check wildcards last, try www for those unless already seen.
+                foreach my $e (sort { $b cmp $a } @{$le->domains}) {
+                   my $domain = $e=~/^\*\.(.+)$/ ? "www.$1" : $e;
+                   next if $seen{$domain}++;
+                   $opt->{'logger'}->info("Checking $domain");
+                   $opt->{'expires'} = $le->check_expiration("https://$domain/");
+                   last if (defined $opt->{'expires'});
+               }
             }
         }
         return $opt->{'error'}->("Could not get the certificate expiration value, cannot renew.", 'EXPIRATION_GET') unless (defined $opt->{'expires'});
@@ -234,7 +243,7 @@ sub parse_options {
     my $opt = shift;
     my $args = @ARGV;
 
-    GetOptions ($opt, 'key=s', 'csr=s', 'csr-key=s', 'domains=s', 'path=s', 'crt=s', 'email=s', 'curve=s', 'server=s', 'api=i', 'config=s', 'renew=i', 'issue-code=i',
+    GetOptions ($opt, 'key=s', 'csr=s', 'csr-key=s', 'domains=s', 'path=s', 'crt=s', 'email=s', 'curve=s', 'server=s', 'api=i', 'config=s', 'renew=i', 'renew-check=s','issue-code=i',
         'handle-with=s', 'handle-as=s', 'handle-params=s', 'complete-with=s', 'complete-params=s', 'log-config=s', 'update-contacts=s', 'export-pfx=s', 'tag-pfx=s',
         'generate-missing', 'generate-only', 'revoke', 'legacy', 'unlink', 'live', 'quiet', 'debug+', 'help') || return $opt->{'error'}->("Use --help to see the usage examples.", 'PARAMETERS_PARSE');
 
@@ -256,6 +265,10 @@ sub parse_options {
         $opt->{'logger'}->warn("Remember to URL-escape special characters if you are using server URL with basic auth credentials.") if $server=~s~[^@/]*@~~;
         $opt->{'logger'}->info("Custom server URL 'https://$server' is used.");
         $opt->{'logger'}->warn("Note: 'live' option is ignored.") if $opt->{'live'};
+    }
+
+    if ($opt->{'renew-check'}) {
+        $opt->{'error'}->("Unsupported protocol for the renew check URL: $1.", 'RENEW_CHECK_URL') if ($opt->{'renew-check'}=~s~^(.*?)://~~ and uc($1) ne 'HTTPS');
     }
 
     return $opt->{'error'}->("Incorrect parameters - need account key file name specified.", 'ACCOUNT_KEY_FILENAME_REQUIRED') unless $opt->{'key'};
@@ -683,6 +696,12 @@ f) To issue a wildcard certificate, which requires DNS verification:
  le.pl --key account.key --csr domain.csr --csr-key domain.key --crt domain.crt
        --domains "*.domain.ext" --generate-missing --handle-as dns --api 2
 
+To inclide a "bare domain", add it too, since it is NOT covered by the wildcard:
+
+ le.pl --key account.key --csr domain.csr --csr-key domain.key --crt domain.crt
+        --domains "*.domain.ext,domain.ext" --generate-missing
+        --handle-as dns --api 2
+
 g) To just generate the keys and CSR:
 
  le.pl --key account.key --csr domain.csr --csr-key domain.key
@@ -723,6 +742,10 @@ left is checked by either of two methods:
     --domains or CSR will be made until the first successful response is
     received. The peer certificate will be then checked for expiration.
 
+You can also use --renew-check option to specify an URL, against which a
+certificate will be checked for expirarion in case if it is not available
+locally.
+
  NOTE: By default a staging server is used, which does not provide trusted
  certificates. This is to avoid exceeding a rate limits on Let's Encrypt
  live server. To generate an actual certificate, always add --live option.
@@ -756,6 +779,7 @@ EOF
 -crt <file>                  : Name for the domain certificate file.
 -domains <list>              : Domains list (optional if CSR exists).
 -renew <XX>                  : Renew if XX or fewer days are left.
+-renew-check <URL>           : Check expiration against a specific URL.
 -curve <name|default>        : ECC curve name (optional).
 -path <absolute path>        : Path to .well-known/acme-challenge/ (optional).
 -handle-with <module>        : Module to handle challenges with (optional).

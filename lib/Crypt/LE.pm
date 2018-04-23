@@ -4,7 +4,7 @@ use 5.006;
 use strict;
 use warnings;
 
-our $VERSION = '0.31';
+our $VERSION = '0.32a';
 
 =head1 NAME
 
@@ -12,7 +12,7 @@ Crypt::LE - Let's Encrypt API interfacing module and client.
 
 =head1 VERSION
 
-Version 0.31
+Version 0.32a
 
 =head1 SYNOPSIS
 
@@ -744,7 +744,7 @@ sub register {
         ($status, $content) = $self->_request($self->{directory}->{'reg'}, { resource => 'reg' });
         if ($status == $self->_compat_response(ACCEPTED)) {
             $self->{registration_info} = $content;
-            if ($self->{links} and $self->{links}->{'terms-of-service'} and (!$content->{agreement} or ($self->{links}->{'terms-of-service'} ne $content->{agreement}))) {
+            if ($self->version() == 1 and $self->{links} and $self->{links}->{'terms-of-service'} and (!$content->{agreement} or ($self->{links}->{'terms-of-service'} ne $content->{agreement}))) {
                 $self->_debug($content->{agreement} ? "You need to accept TOS" : "TOS has changed, you may need to accept it again.");
                 $self->{tos_changed} = 1;
             } else {
@@ -820,27 +820,28 @@ sub request_challenge {
     # We are keeping the flow compatible with older clients, so if that call has not been specifically made (as it would in le.pl), we do
     # it at the point of requesting the challenge. Note that if certificate is already valid, we will skip most of the challenge-related
     # calls, but will not be returning the cert early to avoid interrupting the established flow.
-    if ($self->version() > 1 and !$self->{authz}) {
-        my ($status, $content) = $self->_request($self->{directory}->{'new-cert'}, { resource => 'new-cert' });
-        if ($status == CREATED and $content->{'identifiers'} and $content->{'authorizations'}) {
-            map { $self->{authz}->{$_->{'value'}} = shift @{$content->{'authorizations'}} } @{$content->{'identifiers'}};
+    if ($self->version() > 1) {
+        unless ($self->{authz}) {
+            my ($status, $content) = $self->_request($self->{directory}->{'new-cert'}, { resource => 'new-cert' });
+            if ($status == CREATED and $content->{'identifiers'} and $content->{'authorizations'}) {
+                push @{$self->{authz}}, [ $_ ] for @{$content->{'authorizations'}};
+            } else {
+                return $self->_status(ERROR, "Cannot request challenges.") unless $self->{directory}->{'new-authz'};
+                $self->_get_authz();
+            }
         }
+    } else {
+        $self->_get_authz();
     }
-    foreach my $domain (@{$self->{loaded_domains}}) {
-        if (defined $self->{domains}->{$domain}) {
-            $self->_debug("Domain $domain " . ($self->{domains}->{$domain} ? "has been already validated, skipping." : "challenge has been already requested, skipping."));
-            next;
-        }
-        # If authz is not loaded and there's no method to request one - return an error.
-        unless ($self->{directory}->{'new-authz'} or ($self->{authz} and $self->{authz}->{$domain})) {
-            return $self->_status(ERROR, "Cannot request challenges - new-authz is not listed in the directory.");
-        }
-        $self->_debug("Requesting challenge for domain $domain.");
-        my ($status, $content) = ($self->{authz} and $self->{authz}->{$domain}) ? $self->_request($self->{authz}->{$domain}) :
-            $self->_request($self->{directory}->{'new-authz'}, { resource => 'new-authz', identifier => { type => 'dns', value => $domain } });
+    foreach my $authz (@{$self->{authz}}) {
+        $self->_debug("Requesting challenge.");
+        my ($status, $content) = $self->_request(@{$authz});
         $domains_requested++;
         if ($status == $self->_compat_response(CREATED)) {
             my $valid_challenge = 0;
+            return $self->_status(ERROR, "Missing identifier in the authz response.") unless ($content->{identifier} and $content->{identifier}->{value});
+            my $domain = $content->{identifier}->{value};
+            $domain = "*.$domain" if $content->{wildcard};
             foreach my $challenge (@{$content->{challenges}}) {
                 unless ($challenge and (ref $challenge eq 'HASH') and $challenge->{type} and ($challenge->{url} or $challenge->{uri}) and $challenge->{status}) {
                     $self->_debug("Challenge for domain $domain does not contain required fields.");
@@ -863,9 +864,11 @@ sub request_challenge {
                 $domains_failed{$domain} = $self->_pull_error($content)||'No valid challenges';
             }
         } else {
+            # NB: In API v2.0 you don't know which domain you are receiving a challenge for - you can only rely
+            # on the identifier in the response. Even though in v1.0 we could associate domain name with this error,
+            # we treat this uniformly and return.
             my $err = $self->_pull_error($content);
-            $self->_debug("Failed to receive challenges for $domain. $err");
-            $domains_failed{$domain} = $err||'Failed to receive challenges';
+            return $self->_status(ERROR, "Failed to receive the challenge. $err");
         }
     }
     if (%domains_failed) {
@@ -876,6 +879,13 @@ sub request_challenge {
         return $self->_status(ERROR, "$info\n$status");
     } else {
         $self->{failed_domains} = [ undef ];
+    }
+    # Domains not requested with authz are considered to be already validated.
+    for my $domain (@{$self->{loaded_domains}}) {
+        unless (defined $self->{domains}->{$domain}) {
+            $self->{domains}->{$domain} = 1;
+            $self->_debug("Domain $domain does not require a challenge at this time.");
+        }
     }
     return $self->_status(OK, $domains_requested ? "Requested challenges for $domains_requested domain(s)." : "There are no domains which were not yet requested for challenges.");
 }
@@ -1148,7 +1158,7 @@ sub request_certificate {
     if ($status == CREATED) {
         if (ref $content eq 'HASH' and $content->{'identifiers'} and $content->{'authorizations'}) {
             # v2. Let's attempt to finalize the order immediately.
-            map { $self->{authz}->{$_->{'value'}} = shift @{$content->{'authorizations'}} } @{$content->{'identifiers'}};
+            push @{$self->{authz}}, [ $_ ] for @{$content->{'authorizations'}};
             my ($check, $ready) = ($content->{'finalize'}, 0);
             if ($check) {
                 ($status, $content) = $self->_request($check, { csr => $csr });
@@ -1751,6 +1761,15 @@ sub _pull_error {
         return $err->{detail} if $err->{detail};
     }
     return '';
+}
+
+sub _get_authz {
+    my $self = shift;
+    return unless $self->{loaded_domains};
+    $self->{authz} = [];
+    foreach my $domain (@{$self->{loaded_domains}}) {
+        push @{$self->{authz}}, [ $self->{directory}->{'new-authz'}, { resource => 'new-authz', identifier => { type => 'dns', value => $domain } } ];
+    }
 }
 
 sub _file {
