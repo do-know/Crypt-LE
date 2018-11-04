@@ -34,6 +34,7 @@ Table of Contents
   * [Plugins](#plugins)
   * [Custom logging](#custom-logging)
   * [Custom exit codes](#custom-exit-codes)
+  * [Proxy support](#proxy-support)
   * [Support and Documentation](#support-and-documentation)
 
 ### REQUIREMENTS
@@ -199,6 +200,10 @@ If you wish to change an exit code for a particular error, you need to find the 
 
     [errors]
     CERTIFICATE_FILE_READ = 200
+
+### PROXY SUPPORT
+
+In the rare case of connecting through a proxy, you can instruct the client to use one by setting HTTPS_PROXY environment variable in the form of https://user:pass@proxy.example.com/ (user:pass@ part is only needed if proxy requires basic auth).
 
 ### SUPPORT AND DOCUMENTATION
 
