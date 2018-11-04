@@ -1,5 +1,16 @@
 Revision history for Crypt-LE
 
+0.32    03 November 2018
+        - Delayed mode introduced (--delayed).
+        - Random order of authz is supported.
+        - Custom URL support for renewal checks (--renew-check).
+        - Challenge requirements can now be logged.
+        - Better support for plugin modules (see "Plugins in multiuser environment" notes in the documentation).
+        - Improved custom parameters passing to plugins (potentially breaking, read "Plugins" section of the documentation).
+        - New nonce is now requested before the verification (to cover the long wait scenario).
+        - Additional plugin example added (to demo possible automation of the DNS verification on Windows, see GitHub repo).
+        - Minor documentation changes.
+
 0.31    16 March 2018
         - Enforced Content-type for API posts (to cover upcoming LE changes).
         - Improved tests to account for specific installations under Windows.

@@ -13,7 +13,7 @@ use MIME::Base64 'encode_base64url';
 use Crypt::LE ':errors', ':keys';
 use utf8;
 
-my $VERSION = '0.32a';
+my $VERSION = '0.32';
 
 exit main();
 
@@ -161,6 +161,9 @@ sub work {
     my $reg = _register($le, $opt);
     return $reg if $reg;
 
+    # Build a copy of the parameters from the command line and added during the runtime, reduced to plain vars and hashrefs.
+    my %callback_data = map { $_ => $opt->{$_} } grep { ! ref $opt->{$_} or ref $opt->{$_} eq 'HASH' } keys %{$opt};
+
     # We might not need to re-verify, verification holds for a while.
     my $new_crt_status = $le->request_certificate();
     unless ($new_crt_status) {
@@ -168,8 +171,6 @@ sub work {
     } else {
         # If it's not an auth problem, but blacklisted domains for example - stop.
         return $opt->{'error'}->("Error requesting certificate: " . $le->error_details, 'CERTIFICATE_GET') if $new_crt_status != AUTH_ERROR;
-        # Add multi-webroot option to parameters passed if it is set.
-        $opt->{'handle-params'}->{'multiroot'} = $opt->{'multiroot'} if $opt->{'multiroot'};
         # Handle DNS internally along with HTTP
         my ($challenge_handler, $verification_handler) = ($opt->{'handler'}, $opt->{'handler'});
         if (!$opt->{'handler'}) {
@@ -180,9 +181,16 @@ sub work {
                 }
             }
         }
+
         return $opt->{'error'}->($le->error_details, 'CHALLENGE_REQUEST') if $le->request_challenge();
-        return $opt->{'error'}->($le->error_details, 'CHALLENGE_ACCEPT') if $le->accept_challenge($challenge_handler || \&process_challenge, $opt->{'handle-params'}, $opt->{'handle-as'});
-        return $opt->{'error'}->($le->error_details, 'CHALLENGE_VERIFY') if $le->verify_challenge($verification_handler || \&process_verification, $opt->{'handle-params'}, $opt->{'handle-as'});
+        return $opt->{'error'}->($le->error_details, 'CHALLENGE_ACCEPT') if $le->accept_challenge($challenge_handler || \&process_challenge, \%callback_data, $opt->{'handle-as'});
+
+        # If delayed mode is requested, exit early with the same code as for the issuance.
+        return { code => $opt->{'issue-code'}||0 } if $opt->{'delayed'};
+
+        # Refresh nonce in case of a long delay between the challenge and the verification step.
+        return $opt->{'error'}->($le->error_details, 'NONCE_REFRESH') unless $le->new_nonce();
+        return $opt->{'error'}->($le->error_details, 'CHALLENGE_VERIFY') if $le->verify_challenge($verification_handler || \&process_verification, \%callback_data, $opt->{'handle-as'});
     }
     unless ($le->certificate) {
         $opt->{'logger'}->info("Requesting domain certificate.");
@@ -219,8 +227,6 @@ sub work {
         }
     }
     if ($opt->{'complete-handler'}) {
-        # Add multi-webroot option to parameters passed if it is set.
-        $opt->{'complete-params'}->{'multiroot'} = $opt->{'multiroot'} if $opt->{'multiroot'};
         my $data = {
             # Note, certificate here is just a domain certificate, issuer is passed separately - so handler could merge those or use them separately as well.
             certificate => $le->certificate, certificate_file => $opt->{'crt'}, key_file => $opt->{'csr-key'}, issuer => $le->issuer, 
@@ -228,7 +234,7 @@ sub work {
         };
         my $rv;
         eval {
-            $rv = $opt->{'complete-handler'}->complete($data, $opt->{'complete-params'});
+            $rv = $opt->{'complete-handler'}->complete($data, \%callback_data);
         };
         if ($@ or !$rv) {
             return $opt->{'error'}->("Completion handler " . ($@ ? "thrown an error: $@" : "did not return a true value"), 'COMPLETION_HANDLER');
@@ -245,7 +251,8 @@ sub parse_options {
 
     GetOptions ($opt, 'key=s', 'csr=s', 'csr-key=s', 'domains=s', 'path=s', 'crt=s', 'email=s', 'curve=s', 'server=s', 'api=i', 'config=s', 'renew=i', 'renew-check=s','issue-code=i',
         'handle-with=s', 'handle-as=s', 'handle-params=s', 'complete-with=s', 'complete-params=s', 'log-config=s', 'update-contacts=s', 'export-pfx=s', 'tag-pfx=s',
-        'generate-missing', 'generate-only', 'revoke', 'legacy', 'unlink', 'live', 'quiet', 'debug+', 'help') || return $opt->{'error'}->("Use --help to see the usage examples.", 'PARAMETERS_PARSE');
+        'generate-missing', 'generate-only', 'revoke', 'legacy', 'unlink', 'delayed', 'live', 'quiet', 'debug+', 'help') ||
+        return $opt->{'error'}->("Use --help to see the usage examples.", 'PARAMETERS_PARSE');
 
     if ($opt->{'config'}) {
         return $opt->{'error'}->("Configuration file '$opt->{'config'}' is not readable", 'PARAMETERS_PARSE') unless -r $opt->{'config'};
@@ -319,30 +326,20 @@ sub parse_options {
         $opt->{'handle-as'} = $opt->{'handle-as'} ? lc($opt->{'handle-as'}) : 'http';
 
         if ($opt->{'handle-with'}) {
-            eval {
-                load $opt->{'handle-with'};
-                $opt->{'handler'} = $opt->{'handle-with'}->new();
-            };
-            return $opt->{'error'}->("Cannot use the module to handle challenges with.", 'CHALLENGE_MODULE_UNAVAILABLE') if $@;
+            my $error = _load_mod($opt, 'handle-with', 'handler');
+            return $opt->{'error'}->("Cannot use the module to handle challenges with - $error", 'CHALLENGE_MODULE_UNAVAILABLE') if $error;
             my $method = 'handle_challenge_' . $opt->{'handle-as'};
             return $opt->{'error'}->("Module to handle challenges does not seem to support the challenge type of $opt->{'handle-as'}.", 'CHALLENGE_MODULE_UNSUPPORTED') unless $opt->{'handler'}->can($method);
             my $rv = _load_params($opt, 'handle-params');
             return $rv if $rv;
-        } else {
-            $opt->{'handle-params'} = { path => $opt->{'path'}, unlink => $opt->{'unlink'} };
         }
 
         if ($opt->{'complete-with'}) {
-            eval {
-                load $opt->{'complete-with'};
-                $opt->{'complete-handler'} = $opt->{'complete-with'}->new();
-            };
-            return $opt->{'error'}->("Cannot use the module to complete processing with.", 'COMPLETION_MODULE_UNAVAILABLE') if $@;
+            my $error = _load_mod($opt, 'complete-with', 'complete-handler');
+            return $opt->{'error'}->("Cannot use the module to complete processing with - $error.", 'COMPLETION_MODULE_UNAVAILABLE') if $error;
             return $opt->{'error'}->("Module to complete processing with does not seem to support the required 'complete' method.", 'COMPLETION_MODULE_UNSUPPORTED') unless $opt->{'complete-handler'}->can('complete');
             my $rv = _load_params($opt, 'complete-params');
             return $rv if $rv;
-        } else {
-            $opt->{'complete-params'} = { path => $opt->{'path'}, unlink => $opt->{'unlink'} };
         }
     }
     return;
@@ -498,6 +495,25 @@ sub _path_mismatch {
     return 0;
 }
 
+sub _load_mod {
+    my ($opt, $type, $handler) = @_;
+    return unless ($opt and $opt->{$type});
+    eval {
+        my $mod = $opt->{$type};
+        if ($mod=~/(\w+)\.pm$/i) {
+            $mod = $1;
+            $opt->{$type} = "./$opt->{$type}" unless $opt->{$type}=~/^(\w+:|\.*[\/\\])/;
+        }
+        load $opt->{$type};
+        $opt->{$handler} = $mod->new();
+    };
+    if (my $rv = $@) {
+        $rv=~s/(?: in) \@INC .*$//s; $rv=~s/Compilation failed[^\n]+$//s;
+        return $rv || 'error';
+    }
+    return undef;
+}
+
 sub _load_params {
     my ($opt, $type) = @_;
     return unless ($opt and $opt->{$type});
@@ -557,12 +573,11 @@ sub process_challenge {
            return 1;
         }
     }
-    print <<EOF;
-Challenge for $challenge->{domain} requires:
-A file '$challenge->{token}' in '/.well-known/acme-challenge/' with the text: $text
-When done, press <Enter>
-EOF
-    <STDIN>;
+    $challenge->{'logger'}->info("Challenge for $challenge->{domain} requires:\nA file '$challenge->{token}' in '/.well-known/acme-challenge/' with the text: $text\n");
+    unless ($params->{'delayed'}) {
+        print "When done, press <Enter>\n";
+        <STDIN>;
+    }
     return 1;
 };
 
@@ -599,13 +614,11 @@ sub process_challenge_dns {
     my ($challenge, $params) = @_;
     my $value = encode_base64url(sha256("$challenge->{token}.$challenge->{fingerprint}"));
     my (undef, $host) = $challenge->{domain}=~/^(\*\.)?(.+)$/;
-    print <<EOF;
-Challenge for '$challenge->{domain}' requires the following DNS record to be created:
-Host: _acme-challenge.$host, type: TXT, value: $value
-Wait for DNS to update by checking it with the command: nslookup -q=TXT _acme-challenge.$host
-When you see a text record returned, press <Enter>
-EOF
-    <STDIN>;
+    $challenge->{'logger'}->info("Challenge for '$challenge->{domain}' requires the following DNS record to be created:\nHost: _acme-challenge.$host, type: TXT, value: $value\n");
+    unless ($params->{'delayed'}) {
+        print "Wait for DNS to update by checking it with the command: nslookup -q=TXT _acme-challenge.$host\nWhen you see a text record returned, press <Enter>\n";
+        <STDIN>;
+    }
     return 1;
 }
 
@@ -746,9 +759,22 @@ You can also use --renew-check option to specify an URL, against which a
 certificate will be checked for expirarion in case if it is not available
 locally.
 
- NOTE: By default a staging server is used, which does not provide trusted
- certificates. This is to avoid exceeding a rate limits on Let's Encrypt
- live server. To generate an actual certificate, always add --live option.
+ ==========================
+ ISSUANCE AND RENEWAL NOTES
+ ==========================
+
+By default a staging server is used, which does not provide trusted
+certificates. This is to avoid exceeding a rate limits on Let's Encrypt
+live server. To generate an actual certificate, always add --live option.
+
+If you want to run the process in two steps (accept a challenge and then
+continue after running some other process), you can use --delayed flag.
+That flag interrupts the process once the challenge is received and
+appropriate information about what is required is printed or logged.
+
+Once you have fulfilled the requirements (by either creating a verification
+file or a DNS record), you can re-run the process without --delayed
+option.
        
  ==================================
  LOGGING CONFIGURATION FILE EXAMPLE
@@ -801,6 +827,7 @@ EOF
 -unlink                      : Remove challenge files automatically.
 -revoke                      : Revoke a certificate.
 -legacy                      : Legacy mode (shorter keys, separate CA file).
+-delayed                     : Exit after requesting the challenge.
 -live                        : Use the live server instead of the test one.
 -debug                       : Print out debug messages.
 -quiet                       : Suppress all messages but errors.

@@ -4,7 +4,7 @@ use 5.006;
 use strict;
 use warnings;
 
-our $VERSION = '0.32a';
+our $VERSION = '0.32';
 
 =head1 NAME
 
@@ -12,7 +12,7 @@ Crypt::LE - Let's Encrypt API interfacing module and client.
 
 =head1 VERSION
 
-Version 0.32a
+Version 0.32
 
 =head1 SYNOPSIS
 
@@ -664,7 +664,8 @@ The following methods are provided for the API workflow processing. All but C<ac
 Loads resource pointers from Let's Encrypt. This method needs to be called before the registration. It
 will be called automatically upon account key loading/generation unless you have reset the 'autodir'
 parameter when creating a new Crypt::LE instance. If any true value is provided as a parameter, reloads
-the directory even if it has been already retrieved (for example to pull another Nonce).
+the directory even if it has been already retrieved, but preserves the 'reg' value (for example to pull
+another Nonce for the current session).
 
 Returns: OK | INVALID_DATA | LOAD_ERROR.
 
@@ -691,6 +692,7 @@ sub directory {
             } else {
                 return $self->_status(INVALID_DATA, "Resource directory does not contain expected fields.");
             }
+            $content->{reg} = $self->{directory}->{reg} if ($self->{directory} and $self->{directory}->{reg});
             $self->{directory} = $content;
             unless ($self->{nonce}) {
                 if ($self->{directory}->{'newNonce'}) {
@@ -901,6 +903,10 @@ a hash reference with the challenge data and a hash reference of parameters opti
 
 The domain name being processed (lower-case)
 
+=item C<host>
+
+The domain name without the wildcard part (if that was present)
+
 =item C<token>
 
 The challenge token
@@ -908,6 +914,18 @@ The challenge token
 =item C<fingerprint>
  
 The account key fingerprint
+
+=item C<file>
+
+The file name for HTTP verification (essentially the same as token)
+
+=item C<text>
+
+The text for HTTP verification
+
+=item C<record>
+
+The value of the TXT record for DNS verification
 
 =item C<logger>
  
@@ -970,7 +988,13 @@ sub accept_challenge {
             next;
         }
         my $rv;
-        my $callback_data = { domain => $domain, token => $self->{challenges}->{$domain}->{$type}->{token}, fingerprint => $self->{fingerprint}, logger => $self->{logger} };
+        my $callback_data = {
+                                domain => $domain,
+                                token => $self->{challenges}->{$domain}->{$type}->{token},
+                                fingerprint => $self->{fingerprint},
+                                logger => $self->{logger},
+                            };
+        $self->_callback_extras($callback_data);
         eval {
             $rv = $mod_callback ? $cb->$handler($callback_data, $params) : &$cb($callback_data, $params); 
         };
@@ -1005,6 +1029,10 @@ a hash reference with the results and a hash reference of parameters optionally 
 
 The domain name processed (lower-case)
 
+=item C<host>
+
+The domain name without the wildcard part (if that was present)
+
 =item C<token>
 
 The challenge token
@@ -1012,6 +1040,18 @@ The challenge token
 =item C<fingerprint>
  
 The account key fingerprint
+
+=item C<file>
+
+The file name for HTTP verification (essentially the same as token)
+
+=item C<text>
+
+The text for HTTP verification
+
+=item C<record>
+
+The value of the TXT record for DNS verification
 
 =item C<valid>
  
@@ -1107,13 +1147,14 @@ sub verify_challenge {
         if ($cb) {
             my $rv;
             my $callback_data = { 
-                                    domain => $domain, 
+                                    domain => $domain,
                                     token => $self->{challenges}->{$domain}->{$type}->{token},
                                     fingerprint => $self->{fingerprint}, 
                                     valid => $validated, 
                                     error => $self->_pull_error($content),
                                     logger => $self->{logger},
                                 };
+            $self->_callback_extras($callback_data);
             eval {
                 $rv = $mod_callback ? $cb->$handler($callback_data, $params) : &$cb($callback_data, $params); 
             };
@@ -1723,6 +1764,16 @@ sub _translate {
         push @{$req->{'identifiers'}}, { type => 'dns', value => $_ } for @{$self->{loaded_domains}};
     }
     return $req;
+}
+
+sub _callback_extras {
+    my ($self, $data) = @_;
+    return unless ($data and $data->{domain});
+    $data->{domain}=~/^(\*\.)?(.+)$/;
+    $data->{host} = $2;
+    $data->{file} = $data->{token};
+    $data->{text} = "$data->{token}.$data->{fingerprint}";
+    $data->{record} = encode_base64url(sha256($data->{text}));
 }
 
 sub _debug {
