@@ -168,11 +168,42 @@ Client options related to plugins are:
  * --complete-with
  * --complete-params
 
-Please note that parameters for `--handle-params` and `--complete-params` are expected to be valid JSON documents or to point to files containing valid JSON documents.
+Please note that parameters for `--handle-params` and `--complete-params` are expected to be _valid JSON documents_ or to _point to files containing valid JSON documents_ (the latter is a preferable method).
 
 Example of running the client with plugins (you can modify the source code of the provided Crypt::LE::Challenge::Simple and Crypt::LE::Complete::Simple):
 
     le.pl --key account.key --email "my@email.address" --csr domain.csr --csr-key domain.key --crt domain.crt --domains "www.domain.ext,domain.ext" --generate-missing --handle-with Crypt::LE::Challenge::Simple --complete-with Crypt::LE::Complete::Simple
+    
+**Note**: you can use the same plugin to cover both the challenge/verification and the completion process, as long as it has appropriately named methods defined. You can also point directly to a Perl module file rather than specify a name of the module. 
+
+**This will work even on Windows, without any need to install anything - having just the binary file of the client and the plugin file is sufficient.**
+
+For example, if you have your le64.exe client and then created or downloaded the plugin code (see **Plugins/DNS.pm** for example) into the same directory, you can use it like this:
+
+    le64.exe -key account.key -domains test.com -csr test.csr -csr-key test.key -crt test.crt -generate-missing -handle-with DNS.pm -handle-as dns -api 2
+
+All comand line parameters are passed to the methods of the plugin, along with the information about the challenge requirements and the verification results. For example, if you have defined handle_challenge_dns method, it will receive the challenge data and the parameters data. The challenge data will contain all the necessary details, including "domain", "host" and "record" values. In this case the "host" would be the same as the "domain", except the wildcard part removed (if it was present). To illustrate:
+
+- If the "domain" is test.com, then the "host" is test.com;
+- If the "domain is "\*.test.com", then the "host" is test.com;
+
+So you would need to set \_acme-challenge record in your "host" zone with the value of the "record".
+
+In a similar way, for the HTTP verification, the method handle_challenge_http would have access to "file", which contains the name of the file to be created, and the "text", which contains the content of that file.
+
+Please note that before v0.32 the parameters passed with --handle-params and --complete-params were accessible directly as keys of the parameters passed to the method. However, starting from v0.32 they are passed under their own key along with all the command line parameters. So if you have passed something like { "name": 123 } as JSON for --handle-params, then previously in your methos you would access that "name" as follows:
+
+my $value = $params->{'name'};
+
+Now you need to access it as follows:
+
+my $value = $params->{'handle-params'}->{'name'};
+
+_This is a potentially breaking change if you used custom handlers and were passing additional custom parameters from the command line of the client, but it is necessary to make all command line parameters accessible to plugins and avoid overlapping the keys._
+
+#### Plugins in multiuser environment ####
+
+It is important to remember that the client code allows plugins to be used. While this makes the client rather flexible in terms of possible automation, it should be kept in mind that you should not be running it from a privileged user (and you do not need to), especially in the multiuser environment. As with any other application that can extend the functionality either by plugins or by executing some commands/hooks, it is never a good idea to make it writable by anyone else or make it run with the privileges it does not actually need. You can almost always achieve the resuts you need without resorting to making your application (or the script that runs it) without making it running as a root or a privileged user - for example to allow reloading the web server on completion you can just configure sudo to allow that reload to a specific user, etc.
 
 ### CUSTOM LOGGING
 
