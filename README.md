@@ -45,6 +45,8 @@ With Windows you don't have to install anything if you want to use [Windows bina
 
 ### INSTALLATION
 
+> _The installation is quite easy and straightforward. The provided client does not need any specific privileges (certainly does not need to be run as a root or any privileged user). Keep in mind that the client functionality can be extended with plugins, so make sure you have read the [Plugins](https://github.com/do-know/Crypt-LE#plugins) section and especially [Plugins in multiuser environment](https://github.com/do-know/Crypt-LE#plugins-in-multiuser-environment) notes._
+
 #### With CPANminus
 
     cpanm Crypt::LE
