@@ -721,6 +721,7 @@ Returns: Nonce value or undef (if neither the value is in the headers nor newNon
 
 sub new_nonce {
     my $self = shift;
+    undef $self->{nonce};
     $self->directory(1);
     return $self->{nonce};
 }
