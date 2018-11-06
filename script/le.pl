@@ -709,7 +709,7 @@ f) To issue a wildcard certificate, which requires DNS verification:
  le.pl --key account.key --csr domain.csr --csr-key domain.key --crt domain.crt
        --domains "*.domain.ext" --generate-missing --handle-as dns --api 2
 
-To inclide a "bare domain", add it too, since it is NOT covered by the wildcard:
+To include a "bare domain", add it too, since it is NOT covered by the wildcard:
 
  le.pl --key account.key --csr domain.csr --csr-key domain.key --crt domain.crt
         --domains "*.domain.ext,domain.ext" --generate-missing
