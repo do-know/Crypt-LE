@@ -4,7 +4,7 @@ use 5.006;
 use strict;
 use warnings;
 
-our $VERSION = '0.32';
+our $VERSION = '0.33';
 
 =head1 NAME
 
@@ -12,7 +12,7 @@ Crypt::LE - Let's Encrypt API interfacing module and client.
 
 =head1 VERSION
 
-Version 0.32
+Version 0.33
 
 =head1 SYNOPSIS
 
@@ -828,6 +828,7 @@ sub request_challenge {
             my ($status, $content) = $self->_request($self->{directory}->{'new-cert'}, { resource => 'new-cert' });
             if ($status == CREATED and $content->{'identifiers'} and $content->{'authorizations'}) {
                 push @{$self->{authz}}, [ $_ ] for @{$content->{'authorizations'}};
+                $self->{finalize} = $content->{'finalize'};
             } else {
                 return $self->_status(ERROR, "Cannot request challenges.") unless $self->{directory}->{'new-authz'};
                 $self->_get_authz();
@@ -1195,56 +1196,57 @@ sub request_certificate {
     my $self = shift;
     return $self->_status(ERROR, "CSR is missing, make sure it has been either loaded or generated.") unless $self->{csr};
     my $csr = encode_base64url($self->pem2der($self->{csr}));
+    my ($status, $content);
     delete $self->{authz};
-    my ($status, $content) = $self->_request($self->{directory}->{'new-cert'}, { resource => 'new-cert', csr => $csr });
-    if ($status == CREATED) {
+    unless ($self->{finalize}) {
+        ($status, $content) = $self->_request($self->{directory}->{'new-cert'}, { resource => 'new-cert', csr => $csr });
+        return $self->_status($status == AUTH_ERROR ? AUTH_ERROR : ERROR, $content) unless ($status == CREATED);
         if (ref $content eq 'HASH' and $content->{'identifiers'} and $content->{'authorizations'}) {
-            # v2. Let's attempt to finalize the order immediately.
             push @{$self->{authz}}, [ $_ ] for @{$content->{'authorizations'}};
-            my ($check, $ready) = ($content->{'finalize'}, 0);
-            if ($check) {
-                ($status, $content) = $self->_request($check, { csr => $csr });
-                my $try = 0;
-                while ($status == SUCCESS and $content and $content->{status} and $content->{status} eq 'processing') {
-                    select(undef, undef, undef, $self->{delay});
-                    ($status, $content) = $self->_request($check, { csr => $csr });
-                    last if ($self->{try} and (++$try == $self->{try}));
-                }
-                if ($status == SUCCESS and $content and $content->{status}) {
-                    if ($content->{status} eq 'valid') {
-                        if ($content->{certificate}) {
-                            $self->_debug("The certificate is ready for download at $content->{certificate}.");
-                            ($status, $content) = $self->_request($content->{certificate});
-                            return $self->_status(ERROR, "Certificate could not be downloaded from $content->{certificate}.") unless ($status == SUCCESS);
-                            # In v2 certificate is returned along with the chain.
-                            $ready = 1;
-                            if ($content=~/(\n\-+END CERTIFICATE\-+)[\s\r\n]+(.+)/s) {
-                                $self->_debug("Certificate is separated from the chain.");
-                                $self->{issuer} = $self->_convert($2, 'CERTIFICATE');
-                                $content = $` . $1;
-                            }
-                        } else {
-                            return $self->_status(ERROR, "The certificate is ready, but there was no download link provided.");
-                        }
-                    } elsif ($content->{status} eq 'invalid') {
-                        return $self->_status(ERROR, "Certificate cannot be issued.");
-                    } elsif ($content->{status} eq 'pending') {
-                        return $self->_status(AUTH_ERROR, "Order already exists but not yet completed.");
-                    } else {
-                        return $self->_status(ERROR, "Unknown order status: $content->{status}.");
+            $self->{finalize} = $content->{'finalize'};
+        }
+    }
+    if ($self->{finalize}) {
+        # v2. Let's attempt to finalize the order immediately.
+        my ($ready, $try) = (0, 0);
+        ($status, $content) = $self->_request($self->{finalize}, { csr => $csr });
+        while ($status == SUCCESS and $content and $content->{status} and $content->{status} eq 'processing') {
+            select(undef, undef, undef, $self->{delay});
+            ($status, $content) = $self->_request($self->{finalize}, { csr => $csr });
+            last if ($self->{try} and (++$try == $self->{try}));
+        }
+        if ($status == SUCCESS and $content and $content->{status}) {
+            if ($content->{status} eq 'valid') {
+                if ($content->{certificate}) {
+                    $self->_debug("The certificate is ready for download at $content->{certificate}.");
+                    ($status, $content) = $self->_request($content->{certificate});
+                    return $self->_status(ERROR, "Certificate could not be downloaded from $content->{certificate}.") unless ($status == SUCCESS);
+                    # In v2 certificate is returned along with the chain.
+                    $ready = 1;
+                    if ($content=~/(\n\-+END CERTIFICATE\-+)[\s\r\n]+(.+)/s) {
+                        $self->_debug("Certificate is separated from the chain.");
+                        $self->{issuer} = $self->_convert($2, 'CERTIFICATE');
+                        $content = $` . $1;
                     }
                 } else {
-                    return $self->_status(AUTH_ERROR, "Could not finalize an order.");
+                    return $self->_status(ERROR, "The certificate is ready, but there was no download link provided.");
                 }
+            } elsif ($content->{status} eq 'invalid') {
+                return $self->_status(ERROR, "Certificate cannot be issued.");
+            } elsif ($content->{status} eq 'pending') {
+                return $self->_status(AUTH_ERROR, "Order already exists but not yet completed.");
+            } else {
+                return $self->_status(ERROR, "Unknown order status: $content->{status}.");
             }
-            return $self->_status(AUTH_ERROR, "Could not finalize an order.") unless $ready;
+        } else {
+            return $self->_status(AUTH_ERROR, "Could not finalize an order.");
         }
-        $self->{certificate} = $self->_convert($content, 'CERTIFICATE');
-        $self->{certificate_url} = $self->{location};
-        $self->{issuer_url} = ($self->{links} and $self->{links}->{up}) ? $self->{links}->{up} : undef;
-        return $self->_status(OK, "Domain certificate has been received." . ($self->{issuer_url} ? " Issuer's certificate can be found at: $self->{issuer_url}" : ""));
+        return $self->_status(AUTH_ERROR, "Could not finalize an order.") unless $ready;
     }
-    return $self->_status($status == AUTH_ERROR ? AUTH_ERROR : ERROR, $content);
+    $self->{certificate} = $self->_convert($content, 'CERTIFICATE');
+    $self->{certificate_url} = $self->{location};
+    $self->{issuer_url} = ($self->{links} and $self->{links}->{up}) ? $self->{links}->{up} : undef;
+    return $self->_status(OK, "Domain certificate has been received." . ($self->{issuer_url} ? " Issuer's certificate can be found at: $self->{issuer_url}" : ""));
 }
 
 =head2 request_issuer_certificate()
