@@ -104,7 +104,7 @@ For more examples, logging configuration and all available parameters overview u
     
 ### WINDOWS CLIENT
 
-Everything described above for the Perl client is applicable to the Windows client, which you can download from the [Releases page](https://github.com/do-know/Crypt-LE/releases). The only difference is that you will be running either le32.exe or le64.exe (depending on your platform) instead of le.pl. There is one thing though you need to take into account when you are specifying the `--path` to store verification files for the HTTP verification on Windows:
+Everything described [above](#client) for the Perl client is applicable to the Windows client, which you can download from the [Releases page](https://github.com/do-know/Crypt-LE/releases). The only difference is that you will be running either le32.exe or le64.exe (depending on your platform) instead of le.pl. There is one thing though you need to take into account when you are specifying the `--path` to store verification files for the HTTP verification on Windows:
 
 > You should **NOT** use a single backslash before the closing quote (if you had path quoted) - you need to either use a double-backslash or none at all. This is specific to Windows environment. To illustrate:
 
