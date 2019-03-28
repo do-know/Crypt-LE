@@ -26,6 +26,7 @@ Table of Contents
       * [Manual installation](#manual-installation)
       * [Windows installation](#windows-installation-with-strawberry-perl)
   * [Client](#client)
+  * [Windows client](#windows-client)
   * [Wildcard certificates support](#wildcard-certificates-support)
   * [PFX/P12 (IIS) support](#pfxp12-iis-support)
   * [IDN (internationalized domain names) support](#idn-internationalized-domain-names-support)
@@ -100,6 +101,21 @@ Please note that with multiple webroots specified, the amount of those should ma
 For more examples, logging configuration and all available parameters overview use `--help`:
 
     le.pl --help
+    
+### WINDOWS CLIENT
+
+Everything described above for the Perl client is applicable to the Windows client, which you can download from the [Releases page](https://github.com/do-know/Crypt-LE/releases). The only difference is that you will be running either le32.exe or le64.exe (depending on your platform) instead of le.pl. There is one thing though you need to take into account when you are specifying the `--path` to store verification files for the HTTP verification on Windows:
+
+> You should **NOT** use a single backslash before the closing quote (if you had path quoted) - you need to either use a double-backslash or none at all. This is specific to Windows environment. To illustrate:
+
+- `--path C:\Directory` - right
+- `--path C:\Directory\` - right
+- `--path "C:\Directory"` - right
+- `--path "C:\\Directory\\"` - right
+- `--path "C:\Directory\\"` - right
+- `--path "C:\Directory\"` - wrong
+
+You can also use a forward slash (/) if you like.
 
 ### WILDCARD CERTIFICATES SUPPORT
 
