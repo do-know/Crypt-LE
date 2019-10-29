@@ -4,7 +4,7 @@ use 5.006;
 use strict;
 use warnings;
 
-our $VERSION = '0.33';
+our $VERSION = '0.34';
 
 =head1 NAME
 
@@ -12,7 +12,7 @@ Crypt::LE - Let's Encrypt API interfacing module and client.
 
 =head1 VERSION
 
-Version 0.33
+Version 0.34
 
 =head1 SYNOPSIS
 
@@ -770,6 +770,9 @@ sub register {
             $self->{contact_details} = $self->{registration_info}->{contact};
         }
     }
+    if (!$self->{registration_id} and $self->{directory}->{reg}=~/\/(\d+)$/) {
+        $self->{registration_id} = $1;
+    }
     $self->_debug("Account ID: $self->{registration_id}") if $self->{registration_id};
     return $self->_status(OK, "Registration success: TOS change status - $self->{tos_changed}, new registration flag - $self->{new_registration}.");
 }
@@ -1511,9 +1514,8 @@ Returns: DER form of the provided PEM content
 sub pem2der {
     my ($self, $pem) = @_;
     return unless $pem;
-    $pem=~s/^-+.*$//mg;
-    $pem=~s/^[\r\n\s]+//;
-    $pem=~s/[\r\n\s]+$//;
+    $pem = $1 if $pem=~/(?:^|\s+)-+BEGIN[^-]*-+\s+(.*?)\s+-+END/s;
+    $pem=~s/\s+//;
     return decode_base64($pem);
 }
 

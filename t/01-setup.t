@@ -4,9 +4,10 @@ use strict;
 use warnings;
 use Test::More;
 use File::Temp ();
+use MIME::Base64 'encode_base64';
 use Crypt::LE ':errors', ':keys';
 $|=1;
-plan tests => 60;
+plan tests => 62;
 
 my $le = Crypt::LE->new(autodir => 0);
 sub line { my $l = shift; $l=~s/[\r\n]//sg if $l; $l }
@@ -116,7 +117,13 @@ ok($le->load_csr(\$usable_csr) == OK, 'Setting a valid CSR from scalar');
 ok($le->load_csr(\$invalid_csr) == INVALID_DATA, 'Setting an invalid CSR from scalar');
 ok($le->load_csr(\$broken_csr) == LOAD_ERROR, 'Setting a broken CSR from scalar');
 
-# Same for the CSR key
+# Check for CSRs with comments
+my $commented_csr = "Text\n$usable_csr";
+ok($le->load_csr(\$commented_csr) == OK, 'Setting a commented valid CSR from scalar');
+$commented_csr = encode_base64($le->pem2der($le->csr));
+ok($commented_csr=~/^MI.*Own$/s, 'Converting a commented CSR');
+
+# Now the CSR key
 ok($le->load_csr_key(\$usable_key) == OK, 'Setting a valid CSR key from scalar');
 
 # CSR tests
