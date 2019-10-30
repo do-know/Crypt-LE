@@ -125,13 +125,13 @@ You can also use a forward slash (/) if you like.
 
 *_To issue a wildcard certificate, use DNS verification and specify the domain in the following format: *.some.domain._*
 
-     le.pl ... --domains "*.some.domain" --handle-as dns --api 2
+     le.pl ... --domains "*.some.domain" --handle-as dns
 
 Please note that at the moment wildcards are only supported by the v2.0 of the API and they can only be issued if DNS verification is used.
 
 **Important** - if you are issuing a wildcard certificate and also want a so-called "naked domain" ("some.domain") to be covered, list both of those names in the `domains` parameter. You will then need to create two TXT records with _identical_ names but different values - this is normal and this is how you should create them.
 
-     le.pl ... --domains "*.some.domain, some.domain" --handle-as dns --api 2
+     le.pl ... --domains "*.some.domain, some.domain" --handle-as dns
 
 ### PFX/P12 (IIS) SUPPORT
 
@@ -202,7 +202,7 @@ Example of running the client with plugins (you can modify the source code of th
 
 For example, if you have your le64.exe client and then created or downloaded the plugin code (see **Plugins/DNS.pm** for example) into the same directory, you can use it like this:
 
-    le64.exe -key account.key -domains test.com -csr test.csr -csr-key test.key -crt test.crt -generate-missing -handle-with DNS.pm -handle-as dns -api 2
+    le64.exe -key account.key -domains test.com -csr test.csr -csr-key test.key -crt test.crt -generate-missing -handle-with DNS.pm -handle-as dns
 
 All comand line parameters are passed to the methods of the plugin, along with the information about the challenge requirements and the verification results. For example, if you have defined handle_challenge_dns method, it will receive the challenge data and the parameters data. The challenge data will contain all the necessary details, including "domain", "host" and "record" values. In this case the "host" would be the same as the "domain", except the wildcard part removed (if it was present). To illustrate:
 

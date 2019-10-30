@@ -83,7 +83,7 @@ WILDCARD CERTIFICATES SUPPORT
 
 To issue a wildcard certificate, use DNS verification and specify the domain in the following format: *.some.domain
 
-For example: le.pl ... --domains "*.some.domain" --handle-as dns --api 2
+For example: le.pl ... --domains "*.some.domain" --handle-as dns
 
 Please note that at the moment wildcards are only supported by the v2.0 of the API and they can only be issued if DNS verification is used.
 
@@ -130,7 +130,7 @@ This will work even on Windows, without any need to install anything - having ju
 
 For example, if you have your le64.exe client and then created or downloaded the plugin code into the same directory, you can use it like this:
 
-    le64.exe -key account.key -domains test.com -csr test.csr -csr-key test.key -crt test.crt -generate-missing -handle-with DNS.pm -handle-as dns -api 2
+    le64.exe -key account.key -domains test.com -csr test.csr -csr-key test.key -crt test.crt -generate-missing -handle-with DNS.pm -handle-as dns
 
 See https://github.com/do-know/Crypt-LE/blob/master/Plugins/DNS.pm as an example of such "combined" plugin.
 
