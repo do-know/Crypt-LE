@@ -50,17 +50,11 @@ Table of Contents
 
 With Linux systems there are just 3 essential things which should be in place for the package to be successfully installed: "gcc", "make" and the SSL development package (usually either "libssl-dev" or "openssl-devel"). You can install those as shown below - _note that your server may already have them, so you might just try installing the client/library itself_.
 
-- For CentOS minimal installation:
+- For CentOS minimal installation: `sudo yum install gcc openssl-devel`
 
-`sudo yum install gcc openssl-devel`
+- For Debian/Ubuntu server installation: `sudo apt-get install make gcc libssl-dev`
 
-- For Debian/Ubuntu server installation:
-
-`sudo apt-get install make gcc libssl-dev`
-
-Usually that should be enough. However, there might be some rare cases where installation fails - for example on a freshly installed Debian 10 (buster) you may see an error for Net::SSLeay. This can be fixed by running:
-
-`sudo apt-get install libnet-ssleay-perl`
+Usually that should be enough. However, there might be some rare cases where installation fails - for example on a freshly installed Debian 10 (buster) you may see an error for Net::SSLeay. This can be fixed by running `sudo apt-get install libnet-ssleay-perl`.
 
 #### For Windows
 
