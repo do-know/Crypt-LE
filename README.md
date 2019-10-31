@@ -24,6 +24,8 @@ Table of Contents
 -----------------
 
   * [Requirements](#requirements)
+      * [For Linux](#for-linux)
+      * [For Windows](#for-windows)
   * [Installation](#installation)
       * [With CPANminus](#with-cpanminus)
       * [With CPAN](#with-cpan)
@@ -44,13 +46,35 @@ Table of Contents
 
 ### REQUIREMENTS
 
-With Linux systems there are just 3 essential things which should be in place for the package to be successfully installed: "gcc", "make" and the SSL development package. The SSL development package name differs depending on Linux distribution and it can be either "libssl-dev" or "openssl-devel". See https://zerossl.com/installation.html for more details.
+#### For Linux
 
-With Windows you don't have to install anything if you want to use [Windows binaries](https://github.com/do-know/Crypt-LE/releases) - self-sufficient and portable. Otherwise you just need to install Perl. Actually, in case of [Strawberry Perl](http://strawberryperl.com/releases.html) you don't have to install Perl either - it is enough to download the portable version of it, unzip and then use "cpanm" to install Crypt::LE.
+With Linux systems there are just 3 essential things which should be in place for the package to be successfully installed: "gcc", "make" and the SSL development package (usually either "libssl-dev" or "openssl-devel"). You can install those as shown below - _note that your server may already have them, so you might just try installing the client/library itself_.
+
+- For CentOS minimal installation:
+
+`sudo yum install gcc openssl-devel`
+
+- For Debian/Ubuntu server installation:
+
+`sudo apt-get install make gcc libssl-dev`
+
+Usually that should be enough. However, there might be some rare cases where installation fails - for example on a freshly installed Debian 10 (buster) you may see an error for Net::SSLeay. This can be fixed by running:
+
+`sudo apt-get install libnet-ssleay-perl`
+
+#### For Windows
+
+_With Windows there are no specific requirements at all and *you don't have to install anything* if you want to use [Windows binaries](https://github.com/do-know/Crypt-LE/releases) - self-sufficient and portable. Otherwise you just need to install Perl (see below)._
+
+If you use [Strawberry Perl](http://strawberryperl.com/releases.html), then CPANminus will be already pre-installed and you will only need to instatll Crypt::LE itself. It is enough to download the portable version of Strawberry Perl for your platform (64bit or less likely 32bit). Then just unzip it to the directory of your choice (say C:\Perl64\) and use "cpanm" to install Crypt::LE.
+
+If you use ActiveState Perl, then after installing the Perl itself, you will need to install App-cpanminus (using 'ppm' - Perl Package Manager). Note that for business license users ActiveState offers more ppm packages (including Crypt-LE), so it could then be installed directly, without the need to install App-cpanminus.
 
 ### INSTALLATION
 
 > _The installation is quite easy and straightforward. The provided client does not need any specific privileges (certainly does not need to be run as a root or any privileged user). Keep in mind that the client functionality can be extended with plugins, so make sure you have read the [Plugins](https://github.com/do-know/Crypt-LE#plugins) section and especially [Plugins in multiuser environment](https://github.com/do-know/Crypt-LE#plugins-in-multiuser-environment) notes._
+
+Please note that for Windows you can just download portable **[Win32/Win64 binaries](https://github.com/do-know/Crypt-LE/releases)** - you do not have to install anything, _even if you intend to use custom Perl plugins_. You would only need to install the Crypt::LE library on Windows if you intend to use it with your own client (or the custom version of le.pl client). 
 
 #### With CPANminus
 
@@ -72,7 +96,7 @@ With Windows you don't have to install anything if you want to use [Windows bina
     cpanm -f Log::Log4perl
     cpanm Crypt::LE
 
-Note: On Windows current version of the logging module needs to be installed with -f flag first if Strawberry Perl is used.
+See https://zerossl.com/installation.html for more details.
 
 ### CLIENT
 
