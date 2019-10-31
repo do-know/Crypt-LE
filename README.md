@@ -54,8 +54,6 @@ With Linux systems there are just 3 essential things which should be in place fo
 
 - For Debian/Ubuntu server installation: `sudo apt-get install make gcc libssl-dev`
 
-Usually that should be enough. However, there might be some rare cases where installation fails - for example on a freshly installed Debian 10 (buster) you may see an error for Net::SSLeay. This can be fixed by running `sudo apt-get install libnet-ssleay-perl`.
-
 #### For Windows
 
 _With Windows there are no specific requirements at all and *you don't have to install anything* if you want to use [Windows binaries](https://github.com/do-know/Crypt-LE/releases) - self-sufficient and portable. Otherwise you just need to install Perl (see below)._
@@ -89,6 +87,8 @@ Please note that for Windows you can just download portable **[Win32/Win64 binar
 
     cpanm -f Log::Log4perl
     cpanm Crypt::LE
+
+Note: there might be some rare cases where installation fails on Linux - for example on a freshly installed Debian 10 (buster) you may see an error for Net::SSLeay. This can be fixed by running `sudo apt-get install libnet-ssleay-perl`.
 
 See https://zerossl.com/installation.html for more details.
 
