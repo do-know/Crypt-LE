@@ -73,10 +73,10 @@ sub handle_verification_http {
     $results->{logger}->info("Processing the 'http' verification for '$results->{domain}' with " . __PACKAGE__) if $results->{logger};
     if ($results->{valid}) {
         print "Domain verification results for '$results->{domain}': success.\n";
+        print "You can now delete '$results->{token}' file\n";
     } else {
         print "Domain verification results for '$results->{domain}': error. $results->{error}\n";
     }
-    print "You can now delete '$results->{token}' file\n";
     return 1;
 }
 
@@ -92,10 +92,10 @@ sub handle_verification_dns {
     $results->{logger}->info("Processing the 'dns' verification for '$results->{domain}' with " . __PACKAGE__) if $results->{logger};
     if ($results->{valid}) {
         print "Domain verification results for '$results->{domain}': success.\n";
+        print "You can now delete '_acme-challenge.$host' DNS record\n";
     } else {
         print "Domain verification results for '$results->{domain}': error. $results->{error}\n";
     }
-    print "You can now delete '_acme-challenge.$host' DNS record\n";
     1;
 }
 
