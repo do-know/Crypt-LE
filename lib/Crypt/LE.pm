@@ -4,7 +4,7 @@ use 5.006;
 use strict;
 use warnings;
 
-our $VERSION = '0.34';
+our $VERSION = '0.35';
 
 =head1 NAME
 
@@ -12,7 +12,7 @@ Crypt::LE - Let's Encrypt API interfacing module and client.
 
 =head1 VERSION
 
-Version 0.34
+Version 0.35
 
 =head1 SYNOPSIS
 
@@ -830,7 +830,7 @@ sub request_challenge {
         unless ($self->{authz}) {
             my ($status, $content) = $self->_request($self->{directory}->{'new-cert'}, { resource => 'new-cert' });
             if ($status == CREATED and $content->{'identifiers'} and $content->{'authorizations'}) {
-                push @{$self->{authz}}, [ $_ ] for @{$content->{'authorizations'}};
+                push @{$self->{authz}}, [ $_, '' ] for @{$content->{'authorizations'}};
                 $self->{finalize} = $content->{'finalize'};
             } else {
                 return $self->_status(ERROR, "Cannot request challenges.") unless $self->{directory}->{'new-authz'};
@@ -1132,11 +1132,12 @@ sub verify_challenge {
         if ($status == $expected_status) {
             $content->{uri} ||= $content->{url};
             if ($content->{uri}) {
-                my $check = $content->{uri};
+                my @check = ($content->{uri});
+                push @check, '' if ($self->version() > 1);
                 my $try = 0;
                 while ($status == $expected_status and $content and $content->{status} and $content->{status} eq 'pending') {
                     select(undef, undef, undef, $self->{delay});
-                    ($status, $content) = $self->_request($check);
+                    ($status, $content) = $self->_request(@check);
                     last if ($self->{try} and (++$try == $self->{try}));
                 }
                 if ($status == $expected_status and $content and $content->{status}) {
@@ -1205,7 +1206,7 @@ sub request_certificate {
         ($status, $content) = $self->_request($self->{directory}->{'new-cert'}, { resource => 'new-cert', csr => $csr });
         return $self->_status($status == AUTH_ERROR ? AUTH_ERROR : ERROR, $content) unless ($status == CREATED);
         if (ref $content eq 'HASH' and $content->{'identifiers'} and $content->{'authorizations'}) {
-            push @{$self->{authz}}, [ $_ ] for @{$content->{'authorizations'}};
+            push @{$self->{authz}}, [ $_, '' ] for @{$content->{'authorizations'}};
             $self->{finalize} = $content->{'finalize'};
         }
     }
@@ -1222,7 +1223,9 @@ sub request_certificate {
             if ($content->{status} eq 'valid') {
                 if ($content->{certificate}) {
                     $self->_debug("The certificate is ready for download at $content->{certificate}.");
-                    ($status, $content) = $self->_request($content->{certificate});
+                    my @cert = ($content->{certificate});
+                    push @cert, '' if ($self->version() > 1);
+                    ($status, $content) = $self->_request(@cert);
                     return $self->_status(ERROR, "Certificate could not be downloaded from $content->{certificate}.") unless ($status == SUCCESS);
                     # In v2 certificate is returned along with the chain.
                     $ready = 1;
@@ -1677,8 +1680,8 @@ sub _request {
     my $resp;
     $opts ||= {};
     my $method = lc($opts->{method} || 'get');
-    if ($payload or $method eq 'post') {
-        $resp = $payload ? $self->{ua}->post($url, { headers => $headers, content => $self->_jws($payload, $url, $opts) }) :
+    if (defined $payload or $method eq 'post') {
+        $resp = defined $payload ? $self->{ua}->post($url, { headers => $headers, content => $self->_jws($payload, $url, $opts) }) :
                            $self->{ua}->post($url, { headers => $headers });
     } else {
         $resp = $self->{ua}->$method($url);
@@ -1713,8 +1716,8 @@ sub _jwk {
 sub _jws {
     my $self = shift;
     my ($obj, $url, $opts) = @_;
-    return unless ($obj and ref $obj);
-    my $json = encode_base64url($j->encode($obj));
+    return unless (defined $obj);
+    my $json = ref $obj ? encode_base64url($j->encode($obj)) : "";
     my $protected = { alg => "RS256", jwk => $self->{jwk}, nonce => $self->{nonce} };
     $opts ||= {};
     if ($url and $self->version() > 1) {
