@@ -46,7 +46,7 @@ sub handle_verification_dns {
     # The record can then be deleted either manually ...
     print "You can now delete '_acme-challenge.$results->{host}' DNS record\n";
     # ... or automatically ($rv will contain an exit code).
-    # my $rv = system('dnscmd', '/recorddelete', $challenge->{host}, '_acme-challenge', 'TXT', $challenge->{record});
+    # my $rv = system('dnscmd', '/recorddelete', $results->{host}, '_acme-challenge', 'TXT', '/f');
 
     return 1;
 }
