@@ -14,7 +14,7 @@ WriteMakefile
                    'IO::File' => '1.13',
                    'Time::Piece' => '1.27',
                    'Test::More' => 0,
-                   'Net::SSLeay' => '1.49',
+                   'Net::SSLeay' => '1.55',
                    'Encode' => 0,
                    'JSON::MaybeXS' => '1.003005',
                    'Module::Load' => '0.28',
