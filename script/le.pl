@@ -13,7 +13,7 @@ use MIME::Base64 'encode_base64url';
 use Crypt::LE ':errors', ':keys';
 use utf8;
 
-my $VERSION = '0.35';
+my $VERSION = '0.36';
 
 exit main();
 
@@ -32,9 +32,17 @@ sub work {
     my $opt = shift;
     my $rv = parse_options($opt);
     return $rv if $rv;
-    # Set the default protocol version to 2 unless it is set explicitly or custom server is set (in which case auto-sense is used).
-    $opt->{'api'} = 2 unless (defined $opt->{'api'} or $opt->{'server'});
-    my $le = Crypt::LE->new(autodir => 0, server => $opt->{'server'}, live => $opt->{'live'}, version => $opt->{'api'}||0, debug => $opt->{'debug'}, logger => $opt->{'logger'});
+    # Set the default protocol version to 2 unless it is set explicitly or custom server/directory is set (in which case auto-sense is used).
+    $opt->{'api'} = 2 unless (defined $opt->{'api'} or $opt->{'server'} or $opt->{'directory'});
+    my $le = Crypt::LE->new(
+	autodir => 0,
+        dir => $opt->{'directory'},
+	server => $opt->{'server'},
+	live => $opt->{'live'},
+	version => $opt->{'api'}||0,
+	debug => $opt->{'debug'},
+	logger => $opt->{'logger'},
+    );
 
     if (-r $opt->{'key'}) {
         $opt->{'logger'}->info("Loading an account key from $opt->{'key'}");
@@ -166,8 +174,8 @@ sub work {
     # Build a copy of the parameters from the command line and added during the runtime, reduced to plain vars and hashrefs.
     my %callback_data = map { $_ => $opt->{$_} } grep { ! ref $opt->{$_} or ref $opt->{$_} eq 'HASH' } keys %{$opt};
 
-    # We might not need to re-verify, verification holds for a while.
-    my $new_crt_status = $le->request_certificate();
+    # We might not need to re-verify, verification holds for a while. NB: Only do that for the standard LE servers.
+    my $new_crt_status = ($opt->{'server'} or $opt->{'directory'}) ? AUTH_ERROR : $le->request_certificate();
     unless ($new_crt_status) {
         $opt->{'logger'}->info("Received domain certificate, no validation required at this time.");
     } else {
@@ -251,7 +259,7 @@ sub parse_options {
     my $opt = shift;
     my $args = @ARGV;
 
-    GetOptions ($opt, 'key=s', 'csr=s', 'csr-key=s', 'domains=s', 'path=s', 'crt=s', 'email=s', 'curve=s', 'server=s', 'api=i', 'config=s', 'renew=i', 'renew-check=s','issue-code=i',
+    GetOptions ($opt, 'key=s', 'csr=s', 'csr-key=s', 'domains=s', 'path=s', 'crt=s', 'email=s', 'curve=s', 'server=s', 'directory=s', 'api=i', 'config=s', 'renew=i', 'renew-check=s','issue-code=i',
         'handle-with=s', 'handle-as=s', 'handle-params=s', 'complete-with=s', 'complete-params=s', 'log-config=s', 'update-contacts=s', 'export-pfx=s', 'tag-pfx=s',
         'generate-missing', 'generate-only', 'revoke', 'legacy', 'unlink', 'delayed', 'live', 'quiet', 'debug+', 'help') ||
         return $opt->{'error'}->("Use --help to see the usage examples.", 'PARAMETERS_PARSE');
@@ -267,14 +275,19 @@ sub parse_options {
     return $rv if $rv;
 
     $opt->{'logger'}->info("[ ZeroSSL Crypt::LE client v$VERSION started. ]");
+    my $custom_server;
 
-    if ($opt->{'server'}) {
-        return $opt->{'error'}->("Unsupported protocol for the custom server URL: $1.", 'CUSTOM_SERVER_URL') if ($opt->{'server'}=~s~^(.*?)://~~ and uc($1) ne 'HTTPS');
-        my $server = $opt->{'server'}; # For logging.
-        $opt->{'logger'}->warn("Remember to URL-escape special characters if you are using server URL with basic auth credentials.") if $server=~s~[^@/]*@~~;
-        $opt->{'logger'}->info("Custom server URL 'https://$server' is used.");
-        $opt->{'logger'}->warn("Note: 'live' option is ignored.") if $opt->{'live'};
+    foreach my $url_type (qw<server directory>) {
+        if ($opt->{$url_type}) {
+            return $opt->{'error'}->("Unsupported protocol for the custom $url_type URL: $1.", 'CUSTOM_' . uc($url_type) . '_URL') if ($opt->{$url_type}=~s~^(.*?)://~~ and uc($1) ne 'HTTPS');
+            my $server = $opt->{$url_type}; # For logging.
+            $opt->{'logger'}->warn("Remember to URL-escape special characters if you are using $url_type URL with basic auth credentials.") if $server=~s~[^@/]*@~~;
+            $opt->{'logger'}->info("Custom $url_type URL 'https://$server' is used.");
+            $opt->{'logger'}->warn("Note: '$url_type' setting takes over the 'server' one.") if $custom_server;
+            $custom_server = 1;
+        }
     }
+    $opt->{'logger'}->warn("Note: 'live' option is ignored.") if ($opt->{'live'} and $custom_server);
 
     if ($opt->{'renew-check'}) {
         $opt->{'error'}->("Unsupported protocol for the renew check URL: $1.", 'RENEW_CHECK_URL') if ($opt->{'renew-check'}=~s~^(.*?)://~~ and uc($1) ne 'HTTPS');
@@ -817,7 +830,8 @@ EOF
 -complete-params <json|file> : JSON for the completion module (optional).
 -issue-code XXX              : Exit code to use on issuance/renewal (optional).
 -email <some@mail.address>   : Email for expiration notifications (optional).
--server <url|host>           : Use custom server URL (optional).
+-server <url|host>           : Custom server URL for API root (optional).
+-directory <url>             : Custom server URL for API directory (optional).
 -api <version>               : API version to use (optional).
 -update-contacts <emails>    : Update contact details.
 -export-pfx <password>       : Export PFX (Windows binaries only).
