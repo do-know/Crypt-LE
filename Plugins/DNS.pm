@@ -27,7 +27,14 @@ EOF
     # dnscmd /recordadd test.contoso.com test MX 10 mailserver.test.contoso.com
 
     # NB: If you are using a 'delayed' and want to avoid running the command on re-run, then check $params->{delayed}.
-    # my $rv = system('dnscmd', '/recordadd', $challenge->{host}, '_acme-challenge', 'TXT', $challenge->{record});
+    
+    # my (undef, $prefix, $host) = $challenge->{host}=~/^((.*)\.)?([^\.]+\.[^\.]+)$/;
+    # $prefix //= "";
+    # my $subname = "_acme-challenge";
+    # if ($prefix ne '' && $prefix ne '*') {
+    #     $subname = "$subname.$prefix";
+    # }
+    # my $rv = system('dnscmd', '/recordadd', $host, $subname, 'TXT', $challenge->{record});
 
     return 1;
 }
@@ -46,7 +53,14 @@ sub handle_verification_dns {
     # The record can then be deleted either manually ...
     print "You can now delete '_acme-challenge.$results->{host}' DNS record\n";
     # ... or automatically ($rv will contain an exit code).
-    # my $rv = system('dnscmd', '/recorddelete', $results->{host}, '_acme-challenge', 'TXT', '/f');
+    
+    # my (undef, $prefix, $host) = $results->{host}=~/^((.*)\.)?([^\.]+\.[^\.]+)$/;
+    # $prefix //= "";
+    # my $subname = "_acme-challenge";
+    # if ($prefix ne '' && $prefix ne '*') {
+    #     $subname = "$subname.$prefix";
+    # }
+    # my $rv = system('dnscmd', '/recorddelete', $host, $subname, 'TXT', '/f');
 
     return 1;
 }
