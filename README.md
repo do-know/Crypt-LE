@@ -1,16 +1,12 @@
 # Crypt-LE
 
-This module provides the functionality necessary to use Let's Encrypt API and generate free SSL certificates for your domains. It can also be used to generate private RSA/ECC keys and Certificate Signing Requests without resorting to openssl command line. Crypt::LE is shipped with a self-sufficient client for obtaining SSL certificates - `le.pl`.
+This module provides the functionality necessary to use Let's Encrypt API and generate free SSL certificates for your domains. It can also be used to generate private RSA/ECC keys and Certificate Signing Requests without resorting to openssl command line. Crypt::LE is shipped with a self-sufficient client for obtaining SSL certificates - `le.pl`. 
 
 **Both ACME v1 and ACME v2 protocols and wildcard certificate issuance are supported.**
 
-_Please note that ACME v1 is being deprected by Let's Encrypt and, starting from version 0.34 of the client, the default version selected is
-ACME v2 (unless you have specified the version explicitly using `--api` option or specified a custom server using `--server` option - in the latter
-case the client will use auto-sensing to select appropriate protocol version)._
+_Please note that ACME v1 is being deprecated by Let's Encrypt and, starting from version 0.34 of the client, the default version selected is ACME v2 (unless you have specified the version explicitly using `--api` option or specified a custom server using `--server` option - in the latter case the client will use auto-sensing to select appropriate protocol version)._
 
-> The client + library package is codenamed ZeroSSL with the project homepage at https://ZeroSSL.com
-
-**Note:** If you do not need the automation and the flexibility this package offers, and just want to get a free SSL certificate without installing anything, you can do that online with **[Free SSL Certificate Wizard](https://zerossl.com/#certificate)** (works on PC and mobiles, supports different languages:  EN, DE, FR, ES, RU, IT and also supports _wildcard certificates_ issuance).
+**Note:** If you do not need the automation and the flexibility this package offers, and just want to get a free SSL certificate without installing anything, you can do that online on **[ZeroSSL.com](https://zerossl.com/)**.
 
 #### COMPATIBILITY
 
@@ -19,6 +15,22 @@ case the client will use auto-sensing to select appropriate protocol version)._
 - If you are a Windows user, you can download portable **[Win32/Win64 binaries](https://github.com/do-know/Crypt-LE/releases)** (they work even on Windows XP and require NO installation).
 
 - In addition, you can use the latest **[Docker Image](https://hub.docker.com/r/zerossl/client/)** (lightweight non-root container).
+
+__Quick start on Windows:__
+
+> - Download and unzip the **[latest release](https://github.com/do-know/Crypt-LE/releases/latest/download/le64.zip)** of the client for Windows (no installation required). If you need a 32bit client or verification files contining checksums, please visit the [releases page](https://github.com/do-know/Crypt-LE/releases).
+
+> - Run the client and follow the instructions (below we are issuing the certificate for `example.org` and `www.example.org` in interactive mode - see the full documentation for more usage examples):
+
+> `le64.exe -email "admin@example.org" -key account.key -csr domain.csr -csr-key domain.key -crt domain.crt -domains "example.org,www.example.org" -generate-missing -live`
+
+__Quick start on Linux/Mac:__
+
+> - Install the client using one of the [methods described](#installation) - usually `cpan -i Crypt::LE` should be sufficient.
+
+> - Run the client and follow the instructions (below we are issuing the certificate for `example.org` and `www.example.org` in interactive mode - see the full documentation for more usage examples):
+
+> `le.pl -email "admin@example.org" -key account.key -csr domain.csr -csr-key domain.key -crt domain.crt -domains "example.org,www.example.org" -generate-missing -live`
 
 Table of Contents
 -----------------
@@ -288,10 +300,9 @@ You can also look for information at:
  * [RT, CPAN's request tracker (report bugs here)](http://rt.cpan.org/NoAuth/Bugs.html?Dist=Crypt-LE)
  * [AnnoCPAN, Annotated CPAN documentation](http://annocpan.org/dist/Crypt-LE)
  
-For feedback or custom development requests see:
+For feedback see:
 
- * Company homepage - https://do-know.com
- * Project homepage - https://ZeroSSL.com
+ * [Do-Know.com](https://do-know.com)
 
 ### NOTES
 
@@ -307,7 +318,7 @@ You can also contribute the completion-handling modules under Crypt::LE::Complet
 
 ### LICENSE AND COPYRIGHT
 
-Copyright (C) 2016-2019 Alexander Yezhov
+Copyright (C) 2016-2020 Alexander Yezhov
 
 This program is free software; you can redistribute it and/or modify it
 under the terms of the the Artistic License (2.0). You may obtain a
