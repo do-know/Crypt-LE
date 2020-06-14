@@ -870,7 +870,9 @@ sub request_challenge {
             my $domain = $content->{identifier}->{value};
             $domain = "*.$domain" if $content->{wildcard};
             foreach my $challenge (@{$content->{challenges}}) {
-                unless ($challenge and (ref $challenge eq 'HASH') and $challenge->{type} and ($challenge->{url} or $challenge->{uri}) and $challenge->{status}) {
+                unless ($challenge and (ref $challenge eq 'HASH') and $challenge->{type} and
+                       ($challenge->{url} or $challenge->{uri}) and
+                       ($challenge->{status} or $content->{status})) {
                     $self->_debug("Challenge for domain $domain does not contain required fields.");
                     next;
                 }
@@ -881,6 +883,7 @@ sub request_challenge {
                 }
                 $valid_challenge = 1 if ($challenge->{status} eq 'valid');
                 $challenge->{uri} ||= $challenge->{url};
+                $challenge->{status} ||= $content->{status};
                 $self->{challenges}->{$domain}->{$type} = $challenge;
             }
             if ($self->{challenges} and exists $self->{challenges}->{$domain}) {
