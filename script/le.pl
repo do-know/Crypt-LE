@@ -126,7 +126,6 @@ sub work {
             return $opt->{'error'}->("Failed to save a CSR key", 'CSR_SAVE') if _write($opt->{'csr-key'}, $le->csr_key);
         }
         return $opt->{'error'}->("For multi-webroot path usage, the amount of paths given should match the amount of domain names listed.", 'WEBROOT_MISMATCH') if _path_mismatch($le, $opt);
-
     }
 
     return if $opt->{'generate-only'};
