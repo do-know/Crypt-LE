@@ -577,8 +577,7 @@ sub process_challenge {
         }
         my $file = "$path/$challenge->{token}";
         if (-e $file) {
-           $challenge->{'logger'}->error("File already exists - this should not be the case, please move it or remove it.");
-           return 0;
+           $challenge->{'logger'}->warn("File already exists - might happen if previous validations failed and -unlink option was not used.");
         }
         if (_write($file, $text)) {
            $challenge->{'logger'}->error("Failed to save a challenge file '$file' for domain '$challenge->{domain}'");
