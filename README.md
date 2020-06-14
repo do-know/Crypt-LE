@@ -18,19 +18,15 @@ _Please note that ACME v1 is being deprecated by Let's Encrypt and, starting fro
 
 __Quick start on Windows:__
 
-> - Download and unzip the **[latest release](https://github.com/do-know/Crypt-LE/releases/latest/download/le64.zip)** of the client for Windows (no installation required). If you need a 32bit client or verification files contining checksums, please visit the [releases page](https://github.com/do-know/Crypt-LE/releases).
+> Download and unzip the **[latest release](https://github.com/do-know/Crypt-LE/releases/latest/download/le64.zip)** of the client for Windows (no installation required, for more details see the [releases page](https://github.com/do-know/Crypt-LE/releases)), then run the client and follow the instructions (below we are issuing the certificate for `example.org` and `www.example.org` in interactive mode - see the full documentation for more usage examples):
 
-> - Run the client and follow the instructions (below we are issuing the certificate for `example.org` and `www.example.org` in interactive mode - see the full documentation for more usage examples):
-
-> `le64.exe -email "admin@example.org" -key account.key -csr domain.csr -csr-key domain.key -crt domain.crt -domains "example.org,www.example.org" -generate-missing -live`
+`le64.exe -email "admin@example.org" -key account.key -csr domain.csr -csr-key domain.key -crt domain.crt -domains "example.org,www.example.org" -generate-missing -live`
 
 __Quick start on Linux/Mac:__
 
-> - Install the client using one of the [methods described](#installation) - usually `cpan -i Crypt::LE` should be sufficient.
+> Install the client using one of the [methods described](#installation) (usually "cpan -i Crypt::LE" should be sufficient), then run the client and follow the instructions (below we are issuing the certificate for `example.org` and `www.example.org` in interactive mode - see the full documentation for more usage examples):
 
-> - Run the client and follow the instructions (below we are issuing the certificate for `example.org` and `www.example.org` in interactive mode - see the full documentation for more usage examples):
-
-> `le.pl -email "admin@example.org" -key account.key -csr domain.csr -csr-key domain.key -crt domain.crt -domains "example.org,www.example.org" -generate-missing -live`
+`le.pl -email "admin@example.org" -key account.key -csr domain.csr -csr-key domain.key -crt domain.crt -domains "example.org,www.example.org" -generate-missing -live`
 
 Table of Contents
 -----------------
