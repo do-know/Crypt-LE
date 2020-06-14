@@ -109,7 +109,6 @@ sub work {
             return $opt->{'error'}->("Could not load existing CSR key from $opt->{'csr-key'} - " . $le->error_details, 'CSR_KEY_LOAD') if $le->load_csr_key($opt->{'csr-key'});
         }
     } else {
-        return $opt->{'error'}->("For multi-webroot path usage, the amount of paths given should match the amount of domain names listed.", 'WEBROOT_MISMATCH') if _path_mismatch($le, $opt);
         $opt->{'logger'}->info("Generating a new CSR for domains $opt->{'domains'}");
         if (-e $opt->{'csr-key'}) {
              # Allow using pre-existing key when generating CSR
@@ -126,6 +125,8 @@ sub work {
             $opt->{'logger'}->info("Saving a new CSR key into $opt->{'csr-key'}");
             return $opt->{'error'}->("Failed to save a CSR key", 'CSR_SAVE') if _write($opt->{'csr-key'}, $le->csr_key);
         }
+        return $opt->{'error'}->("For multi-webroot path usage, the amount of paths given should match the amount of domain names listed.", 'WEBROOT_MISMATCH') if _path_mismatch($le, $opt);
+
     }
 
     return if $opt->{'generate-only'};
@@ -274,7 +275,7 @@ sub parse_options {
     my $rv = reconfigure_log($opt);
     return $rv if $rv;
 
-    $opt->{'logger'}->info("[ ZeroSSL Crypt::LE client v$VERSION started. ]");
+    $opt->{'logger'}->info("[ Crypt::LE client v$VERSION started. ]");
     my $custom_server;
 
     foreach my $url_type (qw<server directory>) {
@@ -651,7 +652,7 @@ sub process_verification_dns {
 
 sub usage_and_exit {
     my $opt = shift;
-    print "\n ZeroSSL Crypt::LE client v$VERSION\n\n";
+    print "\n Crypt::LE client v$VERSION\n\n";
     if ($opt->{'help'}) {
         print << 'EOF';
  ===============

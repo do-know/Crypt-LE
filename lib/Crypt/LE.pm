@@ -1517,7 +1517,7 @@ sub check_expiration {
     } else {
         $res=~s/^[^:]+/https/;
         my $probe = HTTP::Tiny->new(
-            agent => "Mozilla/5.0 (compatible; ZeroSSL Crypt::LE v$VERSION agent; https://ZeroSSL.com/)",
+            agent => "Mozilla/5.0 (compatible; Crypt::LE v$VERSION agent; https://Do-Know.com/)",
             verify_SSL => 1,
             timeout => $timeout || 10,
             SSL_options => { SSL_verify_callback => _verify_crt(\$exp) },
@@ -1556,7 +1556,7 @@ sub der2pem {
 =head2 export_pfx($file, $pass, $cert, $key, [ $ca ], [ $tag ])
 
 Exports given certificate, CA chain and a private key into a PFX/P12 format with a given password.
-Optionally you can specify a text to go into pfx instead of the default "ZeroSSL exported".
+Optionally you can specify a text to go into pfx instead of the default "Crypt::LE exported".
 
 Returns: OK | UNSUPPORTED | INVALID_DATA | ERROR.
 
@@ -1569,7 +1569,7 @@ sub export_pfx {
     return $self->_status(INVALID_DATA, "Password is required") unless $pass;
     my $pkcs12 = Crypt::OpenSSL::PKCS12->new();
     eval {
-        $pkcs12->create($cert, $key, $pass, $file, $ca, $tag || "ZeroSSL exported");
+        $pkcs12->create($cert, $key, $pass, $file, $ca, $tag || "Crypt::LE exported");
     };
     return $self->_status(UNSUPPORTED, $unsupported) if ($@ and $@=~/Usage/);
     return $self->_status(ERROR, $@) if $@;
@@ -1940,10 +1940,6 @@ L<http://search.cpan.org/dist/Crypt-LE/>
 
 =item * Project homepage
 
-L<https://ZeroSSL.com/>
-
-=item * Company homepage
-
 L<https://Do-Know.com/>
 
 
@@ -1952,7 +1948,7 @@ L<https://Do-Know.com/>
 
 =head1 LICENSE AND COPYRIGHT
 
-Copyright 2016-2019 Alexander Yezhov.
+Copyright 2016-2020 Alexander Yezhov.
 
 This program is free software; you can redistribute it and/or modify it
 under the terms of the Artistic License (2.0). You may obtain a

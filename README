@@ -28,8 +28,6 @@ first (business license users of ActiveState have direct access to Crypt::LE ppm
 WINDOWS BINARIES: You can also use Windows binaries available at https://github.com/do-know/Crypt-LE/releases - those
 require no installation and available for both 32bit and 64bit environments.
 
-See https://zerossl.com/installation.html for more details.
-
 
 INSTALLATION
 
@@ -180,16 +178,13 @@ You can also look for information at:
 
 For feedback or custom development requests see:
 
-    Company homepage
-        https://Do-Know.com
-
     Project homepage
-        https://ZeroSSL.com
+        https://Do-Know.com
 
 
 LICENSE AND COPYRIGHT
 
-Copyright (C) 2016-2019 Alexander Yezhov
+Copyright (C) 2016-2020 Alexander Yezhov
 
 This program is free software; you can redistribute it and/or modify it
 under the terms of the the Artistic License (2.0). You may obtain a
