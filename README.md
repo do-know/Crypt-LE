@@ -2,7 +2,7 @@
 
 This module provides the functionality necessary to use Let's Encrypt API and generate free SSL certificates for your domains. It can also be used to generate private RSA/ECC keys and Certificate Signing Requests without resorting to openssl command line. Crypt::LE is shipped with a self-sufficient client for obtaining SSL certificates - `le.pl`. 
 
-**Both ACME v1 and ACME v2 protocols and wildcard certificate issuance are supported.**
+**Both ACME v1 and ACME v2 protocols and wildcard certificate issuance are supported. Custom ACME servers are also supported.**
 
 _Please note that ACME v1 is being deprecated by Let's Encrypt and, starting from version 0.34 of the client, the default version selected is ACME v2 (unless you have specified the version explicitly using `--api` option or specified a custom server using `--server` option - in the latter case the client will use auto-sensing to select appropriate protocol version)._
 
@@ -16,18 +16,6 @@ _Please note that ACME v1 is being deprecated by Let's Encrypt and, starting fro
 
 - In addition, you can use the latest **[Docker Image](https://hub.docker.com/r/zerossl/client/)** (lightweight non-root container).
 
-__Quick start on Windows:__
-
-> Download and unzip the **[latest release](https://github.com/do-know/Crypt-LE/releases/latest/download/le64.zip)** of the client for Windows (no installation required, for more details see the [releases page](https://github.com/do-know/Crypt-LE/releases)), then run the client and follow the instructions (below we are issuing the certificate for `example.org` and `www.example.org` in interactive mode - see the full documentation for more usage examples):
-
-`le64.exe -email "admin@example.org" -key account.key -csr domain.csr -csr-key domain.key -crt domain.crt -domains "example.org,www.example.org" -generate-missing -live`
-
-__Quick start on Linux/Mac:__
-
-> Install the client using one of the [methods described](#installation) (usually "cpan -i Crypt::LE" should be sufficient), then run the client and follow the instructions (below we are issuing the certificate for `example.org` and `www.example.org` in interactive mode - see the full documentation for more usage examples):
-
-`le.pl -email "admin@example.org" -key account.key -csr domain.csr -csr-key domain.key -crt domain.crt -domains "example.org,www.example.org" -generate-missing -live`
-
 Table of Contents
 -----------------
 
@@ -38,8 +26,13 @@ Table of Contents
       * [With CPANminus](#with-cpanminus)
       * [With CPAN](#with-cpan)
       * [Manual installation](#manual-installation)
-      * [Windows installation](#windows-installation-with-strawberry-perl)
+      * [Windows installation](#windows-installation-if-you-do-not-want-to-use-the-binaries)
   * [Client](#client)
+      * [Overview](#overview)
+      * [Quick start on Windows](#quick-start-on-windows)
+      * [Quick start on Linux/Mac](#quick-start-on-linuxmac)
+      * [Usage examples](#usage-examples)
+      * [Other certificate providers and custom ACME servers](#other-certificate-providers-and-custom-acme-servers)
   * [Windows client](#windows-client)
   * [Wildcard certificates support](#wildcard-certificates-support)
   * [PFX/P12 (IIS) support](#pfxp12-iis-support)
@@ -74,7 +67,7 @@ If you use ActiveState Perl, then after installing the Perl itself, you will nee
 
 > _The installation is quite easy and straightforward. The provided client does not need any specific privileges (certainly does not need to be run as a root or any privileged user). Keep in mind that the client functionality can be extended with plugins, so make sure you have read the [Plugins](https://github.com/do-know/Crypt-LE#plugins) section and especially [Plugins in multiuser environment](https://github.com/do-know/Crypt-LE#plugins-in-multiuser-environment) notes._
 
-Please note that for Windows you can just download portable **[Win32/Win64 binaries](https://github.com/do-know/Crypt-LE/releases)** - you do not have to install anything, _even if you intend to use custom Perl plugins_. You would only need to install the Crypt::LE library on Windows if you intend to use it with your own client (or the custom version of le.pl client). 
+For Windows you can just download and unzip the **[latest release](https://github.com/do-know/Crypt-LE/releases/latest/download/le64.zip)** of the client - you do not have to install anything, _even if you intend to use custom Perl plugins_. You would only need to install the Crypt::LE library on Windows **if** you intend to use it with your own client (or the custom version of le.pl). For more details, checksum files and a 32bit client please see the [releases page](https://github.com/do-know/Crypt-LE/releases).
 
 #### With CPANminus
 
@@ -91,22 +84,36 @@ Please note that for Windows you can just download portable **[Win32/Win64 binar
 	make test
 	make install
 
-#### Windows installation (with Strawberry Perl)
+#### Windows installation (if you do not want to use the [binaries](https://github.com/do-know/Crypt-LE/releases))
 
     cpanm -f Log::Log4perl
     cpanm Crypt::LE
 
 Note: there might be some rare cases where installation fails on Linux - for example on a freshly installed Debian 10 (buster) you may see an error for Net::SSLeay. This can be fixed by running `sudo apt-get install libnet-ssleay-perl`.
 
-See https://zerossl.com/installation.html for more details.
-
 ### CLIENT
+
+#### Overview
 
 With `le.pl` you should be able to quickly get your SSL certificates issued. Run it without parameters to see how it is used or with --help for an extended help and examples. The client supports 'http' and 'dns' challenges out of the box.
 
 > **Important:** By default all your actions are run against the test server, which behaves exactly as the live one, but produces certificates **not** trusted by the browsers. Once you have tested the process and want to get an actual **trusted** certificate, always append **`--live`** parameter to the command line.
 
-*_Usage example:_*
+#### Quick start on Windows
+
+Download and unzip the **[latest release](https://github.com/do-know/Crypt-LE/releases/latest/download/le64.zip)** of the client for Windows, then run the client and follow the instructions (replace `example.org` with your domain):
+
+    le64.exe -email "admin@example.org" -key account.key -csr domain.csr -csr-key domain.key -crt domain.crt -domains "example.org,www.example.org" -generate-missing -live`
+
+#### Quick start on Linux/Mac
+
+> Install the client using one of the [methods described](#installation) (usually _cpan -i Crypt::LE_ should be sufficient), then run the client and follow the instructions (replace `example.org` with your domain):
+
+    le.pl -email "admin@example.org" -key account.key -csr domain.csr -csr-key domain.key -crt domain.crt -domains "example.org,www.example.org" -generate-missing -live
+
+#### Usage examples
+
+*_Interactive certificate issuance:_*
 
     le.pl --key account.key --email "my@email.address" --csr domain.csr --csr-key domain.key --crt domain.crt --domains  "www.domain.ext,domain.ext" --generate-missing
 
@@ -131,6 +138,14 @@ Please note that with multiple webroots specified, the amount of those should ma
 For more examples, logging configuration and all available parameters overview use `--help`:
 
     le.pl --help
+    
+#### Other certificate providers and custom ACME servers
+
+By default the client uses Let's Encrypt CA (Certificate Authority) to get SSL certificates. However, you can also use it with other ACME-compatible servers by pointing to the "directory root" of such server with `-server` option. For example, you can use the client to obtain the certificate from Buypass CA (another Certificate Authority supporting [free certificate issuance](https://www.buypass.com/ssl/products/acme) using ACME protocol):
+
+    le.pl -server https://api.buypass.com/acme -email test@example.org -key account.key -csr domain.csr -csr-key domain.key -crt domain.crt -domains test.example.org -generate-missing
+    
+For Buypass test environment use `-server https://api.test4.buypass.no/acme` (you do not need to use `-live` option when using custom ACME servers). Please note that email has to be specified for Buypass certificates and at the moment of writing they do not support more than 5 domains on one certificate and do not support wildcards.
     
 ### WINDOWS CLIENT
 
