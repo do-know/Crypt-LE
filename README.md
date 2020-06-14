@@ -101,9 +101,9 @@ With `le.pl` you should be able to quickly get your SSL certificates issued. Run
 
 #### Quick start on Windows
 
-Download and unzip the **[latest release](https://github.com/do-know/Crypt-LE/releases/latest/download/le64.zip)** of the client for Windows, then run the client and follow the instructions (replace `example.org` with your domain):
+> Download and unzip the **[latest release](https://github.com/do-know/Crypt-LE/releases/latest/download/le64.zip)** of the client for Windows, then run the client and follow the instructions (replace `example.org` with your domain):
 
-    le64.exe -email "admin@example.org" -key account.key -csr domain.csr -csr-key domain.key -crt domain.crt -domains "example.org,www.example.org" -generate-missing -live`
+    le64.exe -email "admin@example.org" -key account.key -csr domain.csr -csr-key domain.key -crt domain.crt -domains "example.org,www.example.org" -generate-missing -live
 
 #### Quick start on Linux/Mac
 
