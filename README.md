@@ -182,7 +182,7 @@ Windows binaries include export functions into PFX/P12 format, which is normally
       
 **Note:** This fuction does NOT require OpenSSL or any PFX conversion tools to be installed on your machine - it is supported internally by the client. 
 
-By default, exported PFX file will be seen as "ZeroSSL exported" under the "Friendly Name" column of the Certificate Management Console. If you want to specify your own arbitrary string instead, use `--tag-pfx` parameter.
+By default, exported PFX file will be seen as "Crypt::LE exported" under the "Friendly Name" column of the Certificate Management Console. If you want to specify your own arbitrary string instead, use `--tag-pfx` parameter.
 
       le.pl ... --export-pfx "mypassword" --tag-pfx "My own Friendly Name"
       
