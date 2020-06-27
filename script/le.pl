@@ -36,7 +36,7 @@ sub work {
     $opt->{'api'} = 2 unless (defined $opt->{'api'} or $opt->{'server'} or $opt->{'directory'});
     my $le = Crypt::LE->new(
 	autodir => 0,
-        dir => $opt->{'directory'},
+	dir => $opt->{'directory'},
 	server => $opt->{'server'},
 	live => $opt->{'live'},
 	version => $opt->{'api'}||0,

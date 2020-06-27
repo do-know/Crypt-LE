@@ -1,5 +1,14 @@
 Revision history for Crypt-LE
 
+0.36    27 June 2020
+        - Updates to reflect support for other ACME-compatible CAs/servers.
+        - Disabling Let's Encrypt specific shortcut when custom servers are used.
+        - Support for custom ACME servers with custom named directory endpoints.
+        - Support for custom ACME servers using older specifications.
+        - Multi-webroot fix.
+        - Documentation update.
+        - Dockerfile and examples update.
+
 0.35    09 December 2019
         - 'Post as get' update for APIv2.
 
