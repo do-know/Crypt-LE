@@ -853,7 +853,11 @@ sub request_challenge {
                 push @{$self->{authz}}, [ $_, '' ] for @{$content->{'authorizations'}};
                 $self->{finalize} = $content->{'finalize'};
             } else {
-                return $self->_status(ERROR, "Cannot request challenges.") unless $self->{directory}->{'new-authz'};
+                unless ( $self->{directory}->{'new-authz'} ) {
+                    my $detail = $content->{'detail'};
+                    $self->_debug("Received status $status ($detail) while requesting challenge.");
+                    return $self->_status(ERROR, "Cannot request challenges.");
+                }
                 $self->_get_authz();
             }
         }
