@@ -37,6 +37,7 @@ Table of Contents
   * [Wildcard certificates support](#wildcard-certificates-support)
   * [PFX/P12 (IIS) support](#pfxp12-iis-support)
   * [IDN (internationalized domain names) support](#idn-internationalized-domain-names-support)
+  * [Alternative certificates support](#alternative-certificates-support)
   * [Renewals](#renewals)
   * [Contact details updates](#contact-details-updates)
   * [Plugins](#plugins)
@@ -191,8 +192,13 @@ By default, exported PFX file will be seen as "Crypt::LE exported" under the "Fr
 ### IDN (INTERNATIONALIZED DOMAIN NAMES) SUPPORT
 
 If you are using IDN (Internationalized Domain Names) and generating a certificate for those, you can either encode those into "[punycode](https://www.punycoder.com/)" form by yourself, or let the client do that for you. Please note that for the
-conversion to work properly you need to have correct locale settings on your system. For Linux-based systems you can check that with the "locale" command, for Windows make sure that "System locale" in the Control Panel is
-set correctly.
+conversion to work properly you need to have correct locale settings on your system. For Linux-based systems you can check that with the "locale" command, for Windows make sure that "System locale" in the Control Panel is set correctly.
+
+### ALTERNATIVE CERTIFICATES SUPPORT
+
+Let's Encrypt recently started offering "alternative" certificates via the "alternate links" mechanism. When your certificate is requested, LE returns just one such link at the moment of writing, where an intemediate certificate is signed by "ISRG Root X1, Internet Security Research Group" rather than "DST Root CA X3, Digital Signature Trust Co.". You can fetch that alternative certificate instead of the "default" one using the `--alternative` option with a number corresponding to the order in which that alternative certificate was listed. So for the first alternative certificate it will be:
+
+        le.pl ... --alternative 1
 
 ### RENEWALS
 
