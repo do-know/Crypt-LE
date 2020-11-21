@@ -4,7 +4,7 @@ use 5.006;
 use strict;
 use warnings;
 
-our $VERSION = '0.36';
+our $VERSION = '0.37';
 
 =head1 NAME
 
@@ -12,7 +12,7 @@ Crypt::LE - Let's Encrypt API interfacing module and client.
 
 =head1 VERSION
 
-Version 0.36
+Version 0.37
 
 =head1 SYNOPSIS
 
@@ -129,6 +129,7 @@ use MIME::Base64 qw<encode_base64url decode_base64url decode_base64 encode_base6
 use Net::SSLeay qw<XN_FLAG_RFC2253 ASN1_STRFLGS_ESC_MSB MBSTRING_UTF8>;
 use Scalar::Util 'blessed';
 use Encode 'encode_utf8';
+use Storable 'dclone';
 use Convert::ASN1;
 use Module::Load;
 use Time::Piece;
@@ -853,7 +854,9 @@ sub request_challenge {
                 push @{$self->{authz}}, [ $_, '' ] for @{$content->{'authorizations'}};
                 $self->{finalize} = $content->{'finalize'};
             } else {
-                return $self->_status(ERROR, "Cannot request challenges.") unless $self->{directory}->{'new-authz'};
+                unless ($self->{directory}->{'new-authz'}) {
+                    return $self->_status(ERROR, "Cannot request challenges - " . $self->_pull_error($content) . "($status).");
+                }
                 $self->_get_authz();
             }
         }
@@ -1225,6 +1228,7 @@ sub request_certificate {
     my $csr = encode_base64url($self->pem2der($self->{csr}));
     my ($status, $content);
     delete $self->{authz};
+    delete $self->{alternatives};
     unless ($self->{finalize}) {
         ($status, $content) = $self->_request($self->{directory}->{'new-cert'}, { resource => 'new-cert', csr => $csr });
         return $self->_status($status == AUTH_ERROR ? AUTH_ERROR : ERROR, $content) unless ($status == CREATED);
@@ -1257,6 +1261,8 @@ sub request_certificate {
                         $self->{issuer} = $self->_convert($2, 'CERTIFICATE');
                         $content = $` . $1;
                     }
+                    # Save the links to alternative certificates.
+                    $self->{alternatives} = $self->{links}->{alternate} || [];
                 } else {
                     return $self->_status(ERROR, "The certificate is ready, but there was no download link provided.");
                 }
@@ -1276,6 +1282,36 @@ sub request_certificate {
     $self->{certificate_url} = $self->{location};
     $self->{issuer_url} = ($self->{links} and $self->{links}->{up}) ? $self->{links}->{up} : undef;
     return $self->_status(OK, "Domain certificate has been received." . ($self->{issuer_url} ? " Issuer's certificate can be found at: $self->{issuer_url}" : ""));
+}
+
+=head2 request_alternatives()
+
+Requests alternative certificates if any are available.
+
+Returns: OK | ERROR.
+
+=cut
+
+sub request_alternatives {
+    my $self = shift;
+    return $self->_status(ERROR, "The default certificate must be requested before the alternatives.") unless $self->{alternatives};
+    my ($status, $content);
+    delete $self->{alternative_certificates};
+    foreach my $link (@{$self->{alternatives}}) {
+        $self->_debug("Alternative certificate is available at $link.");
+        my @cert = ($link);
+        push @cert, '' if ($self->version() > 1);
+        ($status, $content) = $self->_request(@cert);
+        return $self->_status(ERROR, "Certificate could not be downloaded from $link.") unless ($status == SUCCESS);
+        # In v2 certificate is returned along with the chain.
+        if ($content=~/(\n\-+END CERTIFICATE\-+)[\s\r\n]+(.+)/s) {
+            $self->_debug("Certificate is separated from the chain.");
+            push @{$self->{alternative_certificates}}, [ $self->_convert($` . $1, 'CERTIFICATE'), $self->_convert($2, 'CERTIFICATE') ];
+        } else {
+            push @{$self->{alternative_certificates}}, [ $self->_convert($content, 'CERTIFICATE') ];
+        }
+    }
+    return $self->_status(OK, "Alternative certificates have been received.");
 }
 
 =head2 request_issuer_certificate()
@@ -1400,6 +1436,35 @@ Returns: The last received certificate or undef.
 
 sub certificate {
     return shift->{certificate};
+}
+
+=head2 alternative_certificate()
+
+Returns: Specific alternative certificate as an arrayref (domain, issuer) or undef.
+
+=cut
+
+sub alternative_certificate {
+    my ($self, $idx) = @_;
+    if ($self->{alternative_certificates} and defined $idx and $idx < @{$self->{alternative_certificates}}) {
+        return $self->{alternative_certificates}->[$idx];
+    }
+    return undef;
+}
+
+=head2 alternative_certificates()
+
+Returns: All available alternative certificates (as an arrayref of arrayrefs) or undef.
+
+=cut
+
+sub alternative_certificates {
+    my ($self) = @_;
+    if ($self->{alternative_certificates}) {
+        # Prevent them from being accidentally changed (using the core module to avoid adding more dependencies).
+        return dclone $self->{alternative_certificates};
+    }
+    return undef;
 }
 
 =head2 certificate_url()
@@ -1764,7 +1829,12 @@ sub _links {
     my $rv;
     foreach my $link ((ref $links eq 'ARRAY') ? @{$links} : ($links)) {
         next unless ($link and $link=~/^<([^>]+)>;rel="([^"]+)"$/i);
-        $rv->{$2} = $1;
+        if ($2 eq 'alternate') {
+            # We might have more than one alternate link.
+            push @{$rv->{$2}}, $1;
+        } else {
+            $rv->{$2} = $1;
+        }
     }
     return $rv;
 }

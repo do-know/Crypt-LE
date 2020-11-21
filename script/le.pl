@@ -13,7 +13,7 @@ use MIME::Base64 'encode_base64url';
 use Crypt::LE ':errors', ':keys';
 use utf8;
 
-my $VERSION = '0.36';
+my $VERSION = '0.37';
 
 exit main();
 
@@ -206,32 +206,51 @@ sub work {
         $opt->{'logger'}->info("Requesting domain certificate.");
         return $opt->{'error'}->($le->error_details, 'CERTIFICATE_REQUEST') if $le->request_certificate();
     }
-    $opt->{'logger'}->info("Requesting issuer's certificate.");
-    if ($le->request_issuer_certificate()) {
-        $opt->{'logger'}->error("Could not download an issuer's certificate, " . ($le->issuer_url ? "try to download manually from " . $le->issuer_url : "the URL has not been provided."));
-        $opt->{'logger'}->warn("Will be saving the domain certificate alone, not the full chain.");
-        return $opt->{'error'}->("Failed to save the domain certificate file", 'CERTIFICATE_SAVE') if _write($opt->{'crt'}, $le->certificate);
+
+    my ($certificate, $issuer, $saved);
+
+    if ($opt->{'alternative'}) {
+        $opt->{'logger'}->info("Requesting alternative certificates.");
+        return $opt->{'logger'}->error($le->error_details, 'CERTIFICATE_REQUEST') if $le->request_alternatives();
+        if (my $alternative = $le->alternative_certificate($opt->{'alternative'} - 1)) {
+            ($certificate, $issuer) = @{$alternative};
+        } else {
+            return $opt->{'error'}->("There is no alternative certificate #$opt->{'alternative'}.", 'CERTIFICATE_REQUEST');
+        }
     } else {
+        $opt->{'logger'}->info("Requesting issuer's certificate.");
+        $certificate = $le->certificate;
+        if ($le->request_issuer_certificate()) {
+            $opt->{'logger'}->error("Could not download an issuer's certificate, " . ($le->issuer_url ? "try to download manually from " . $le->issuer_url : "the URL has not been provided."));
+            $opt->{'logger'}->warn("Will be saving the domain certificate alone, not the full chain.");
+            return $opt->{'error'}->("Failed to save the domain certificate file", 'CERTIFICATE_SAVE') if _write($opt->{'crt'}, $certificate);
+            $saved = 1;
+        } else {
+            $issuer = $le->issuer;
+        }
+    }
+
+    unless ($saved) {
         unless ($opt->{'legacy'}) {
             $opt->{'logger'}->info("Saving the full certificate chain to $opt->{'crt'}.");
-            return $opt->{'error'}->("Failed to save the domain certificate file", 'CERTIFICATE_SAVE') if _write($opt->{'crt'}, $le->certificate . "\n" . $le->issuer . "\n");
+            return $opt->{'error'}->("Failed to save the domain certificate file", 'CERTIFICATE_SAVE') if _write($opt->{'crt'}, $certificate . "\n" . $issuer . "\n");
         } else {
             $opt->{'logger'}->info("Saving the domain certificate to $opt->{'crt'}.");
-            return $opt->{'error'}->("Failed to save the domain certificate file", 'CERTIFICATE_SAVE') if _write($opt->{'crt'}, $le->certificate);
+            return $opt->{'error'}->("Failed to save the domain certificate file", 'CERTIFICATE_SAVE') if _write($opt->{'crt'}, $certificate);
             $opt->{'crt'}=~s/\.[^\.]+$//;
             $opt->{'crt'}.='.ca';
             $opt->{'logger'}->info("Saving the issuer's certificate to $opt->{'crt'}.");
-            $opt->{'logger'}->error("Failed to save the issuer's certificate, try to download manually from " . $le->issuer_url) if _write($opt->{'crt'}, $le->issuer);
+            $opt->{'logger'}->error("Failed to save the issuer's certificate", 'CERTIFICATE_SAVE') if _write($opt->{'crt'}, $issuer);
         }
     }
     if ($opt->{'export-pfx'}) {
         # Note: At this point the certificate is already issued, but with pfx export option active we will return an error if export has failed, to avoid triggering
         # the 'success' batch processing IIS users might have set up on issuance and export.
-        if ($le->issuer) {
+        if ($issuer) {
             my $target_pfx = $opt->{'crt'};
             $target_pfx=~s/\.[^\.]*$//;
             $opt->{'logger'}->info("Exporting certificate to $target_pfx.pfx.");
-            return $opt->{'error'}->("Error exporting pfx: " . $le->error_details, 'CERTIFICATE_EXPORT') if $le->export_pfx("$target_pfx.pfx", $opt->{'export-pfx'}, $le->certificate, $le->csr_key, $le->issuer, $opt->{'tag-pfx'});
+            return $opt->{'error'}->("Error exporting pfx: " . $le->error_details, 'CERTIFICATE_EXPORT') if $le->export_pfx("$target_pfx.pfx", $opt->{'export-pfx'}, $certificate, $le->csr_key, $issuer, $opt->{'tag-pfx'});
         } else {
             return $opt->{'error'}->("Issuer's certificate is not available, skipping pfx export to avoid creating an invalid pfx.", 'CERTIFICATE_EXPORT_ISSUER');
         }
@@ -239,7 +258,7 @@ sub work {
     if ($opt->{'complete-handler'}) {
         my $data = {
             # Note, certificate here is just a domain certificate, issuer is passed separately - so handler could merge those or use them separately as well.
-            certificate => $le->certificate, certificate_file => $opt->{'crt'}, key_file => $opt->{'csr-key'}, issuer => $le->issuer, 
+            certificate => $le->certificate, certificate_file => $opt->{'crt'}, key_file => $opt->{'csr-key'}, issuer => $le->issuer, alternatives => $le->alternative_certificates(),
             domains => $le->domains, logger => $opt->{'logger'},
         };
         my $rv;
@@ -261,7 +280,7 @@ sub parse_options {
 
     GetOptions ($opt, 'key=s', 'csr=s', 'csr-key=s', 'domains=s', 'path=s', 'crt=s', 'email=s', 'curve=s', 'server=s', 'directory=s', 'api=i', 'config=s', 'renew=i', 'renew-check=s','issue-code=i',
         'handle-with=s', 'handle-as=s', 'handle-params=s', 'complete-with=s', 'complete-params=s', 'log-config=s', 'update-contacts=s', 'export-pfx=s', 'tag-pfx=s',
-        'generate-missing', 'generate-only', 'revoke', 'legacy', 'unlink', 'delayed', 'live', 'quiet', 'debug+', 'help') ||
+        'alternative=i', 'generate-missing', 'generate-only', 'revoke', 'legacy', 'unlink', 'delayed', 'live', 'quiet', 'debug+', 'help') ||
         return $opt->{'error'}->("Use --help to see the usage examples.", 'PARAMETERS_PARSE');
 
     if ($opt->{'config'}) {
@@ -835,6 +854,7 @@ EOF
 -update-contacts <emails>    : Update contact details.
 -export-pfx <password>       : Export PFX (Windows binaries only).
 -tag-pfx <tag>               : Tag PFX with a specific name.
+-alternative <Num>           : Save an alternative ceritifcate (if available).
 -config <file>               : Configuration file for the client.
 -log-config <file>           : Configuration file for logging.
 -generate-missing            : Generate missing files (key, csr and csr-key).

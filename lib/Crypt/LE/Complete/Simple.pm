@@ -1,8 +1,9 @@
 package Crypt::LE::Complete::Simple;
+use Data::Dumper;
 use strict;
 use warnings;
 
-our $VERSION = '0.36';
+our $VERSION = '0.37';
 
 =head1 NAME
 
@@ -35,6 +36,7 @@ sub complete {
     print "Domain Certificate '$data->{certificate_file}':\n$data->{certificate}\n";
     print "Issuer's Certificate:\n$data->{issuer}\n";
     print "Key file: '$data->{key_file}'.\n";
+    print "Alternatives: " . Dumper($data->{alternatives});
     return 1;
 };
 

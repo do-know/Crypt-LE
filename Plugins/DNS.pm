@@ -1,4 +1,5 @@
 package DNS;
+use Data::Dumper;
 use strict;
 use warnings;
 
@@ -60,6 +61,7 @@ sub complete {
     print "Domain Certificate '$data->{certificate_file}':\n$data->{certificate}\n";
     print "Issuer's Certificate:\n$data->{issuer}\n";
     print "Key file: '$data->{key_file}'.\n";
+    print "Alternatives: " . Dumper($data->{alternatives});
     # You can automate installing the certificate and reloading the web-server at this point.
     # Note: you can reload the server by granting that permission to a specific user via sudo
     # for example, or running that process completely separately, once the certificate is obtained.
