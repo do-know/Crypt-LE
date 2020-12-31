@@ -7,7 +7,7 @@ use File::Temp ();
 use MIME::Base64 'encode_base64';
 use Crypt::LE ':errors', ':keys';
 $|=1;
-plan tests => 62;
+plan tests => 65;
 
 my $le = Crypt::LE->new(autodir => 0);
 sub line { my $l = shift; $l=~s/[\r\n]//sg if $l; $l }
@@ -83,6 +83,9 @@ can_ok($le, 'csr_key');
 can_ok($le, 'set_account_email');
 can_ok($le, 'set_domains');
 can_ok($le, 'export_pfx');
+can_ok($le, 'request_alternatives');
+can_ok($le, 'alternative_certificate');
+can_ok($le, 'alternative_certificates');
 
 ok($le->set_domains() == INVALID_DATA, 'Setting domain names with no value');
 ok($le->set_domains('http://some.domain') == INVALID_DATA, 'Setting domain names with unsupported entity type (URI)');

@@ -1,5 +1,8 @@
 Revision history for Crypt-LE
 
+0.37    21 November 2020
+        - Alternative certificates support.
+
 0.36    27 June 2020
         - Updates to reflect support for other ACME-compatible CAs/servers.
         - Disabling Let's Encrypt specific shortcut when custom servers are used.

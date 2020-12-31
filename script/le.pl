@@ -854,7 +854,7 @@ EOF
 -update-contacts <emails>    : Update contact details.
 -export-pfx <password>       : Export PFX (Windows binaries only).
 -tag-pfx <tag>               : Tag PFX with a specific name.
--alternative <Num>           : Save an alternative ceritifcate (if available).
+-alternative <num>           : Save an alternative ceritifcate (if available).
 -config <file>               : Configuration file for the client.
 -log-config <file>           : Configuration file for logging.
 -generate-missing            : Generate missing files (key, csr and csr-key).
