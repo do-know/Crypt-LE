@@ -425,20 +425,30 @@ sub encode_args {
 
 sub parse_config {
     my ($opt) = @_;
-    unless ($opt) {
-        return sub {
-            return { code => 1, msg => shift }
+    my $debug = 0;
+    my $errors = {
+        # NB: Early renewal stop is not considered an error by default.
+        EXPIRATION_EARLY => 0,
+    };
+    my $error_sub = sub { # closes upon $debug and $errors above
+        my ($msg, $code) = @_;
+        if ($code and $code!~/^\d+$/) {
+            # Unless associated with 0 exit value, in debug mode
+            # prefix the message with a passed down code.
+            unless (!$debug or (defined $errors->{$code} and !$errors->{$code})) {
+                $msg = "[ $code ] " . ($msg || '');
+            }
+            $code = $errors->{$code};
         }
+        return { msg => $msg, code => $code };
+    };
+    unless ($opt) {
+        return $error_sub;
     }
     if (my $config = _read($opt->{'config'})) {
         # INI-like, simplified.
         my ($cl, $section) = (0, '');
-        my $sections = {
-            errors => {
-                # NB: Early renewal stop is not considered an error by default.
-                EXPIRATION_EARLY => 0,
-            },
-        };
+        my $sections = { errors => { %$errors } };
         for (split /\r?\n/, $config) {
             $cl++;
             next if /^\s*(?:;|#)/;
@@ -454,20 +464,9 @@ sub parse_config {
             }
         }
         # Process errors section.
-        my $debug = $opt->{'debug'};
-        my $errors = delete $sections->{'errors'};
-        $opt->{'error'} = sub {
-            my ($msg, $code) = @_;
-            if ($code and $code!~/^\d+$/) {
-                # Unless associated with 0 exit value, in debug mode
-                # prefix the message with a passed down code.
-                unless (!$debug or (defined $errors->{$code} and !$errors->{$code})) {
-                    $msg = "[ $code ] " . ($msg || '');
-                }
-                $code = $errors->{$code};
-            }
-            return { msg => $msg, code => $code };
-        };
+        $debug = $opt->{'debug'};
+        $errors = delete $sections->{'errors'};
+        $opt->{'error'} = $error_sub;
         return;
     } else {
         return "Could not read config file.";
