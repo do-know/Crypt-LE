@@ -4,7 +4,7 @@ use 5.006;
 use strict;
 use warnings;
 
-our $VERSION = '0.37';
+our $VERSION = '0.38';
 
 =head1 NAME
 
@@ -12,7 +12,7 @@ Crypt::LE - Let's Encrypt API interfacing module and client.
 
 =head1 VERSION
 
-Version 0.37
+Version 0.38
 
 =head1 SYNOPSIS
 
@@ -321,11 +321,7 @@ sub new {
         $self->{dir} = "https://$self->{dir}" unless $self->{dir}=~m~^https?://~i;
     }
     unless ($self->{server}) {
-        if ($self->{version} > 1) {
-            $self->{server} = $self->{live} ? 'acme-v02.api.letsencrypt.org' : 'acme-staging-v02.api.letsencrypt.org';
-        } else {
-            $self->{server} = $self->{live} ? 'acme-v01.api.letsencrypt.org' : 'acme-staging.api.letsencrypt.org';
-        }
+        $self->{server} = $self->{live} ? 'acme-v02.api.letsencrypt.org' : 'acme-staging-v02.api.letsencrypt.org';
     }
     # Init logger
     $self->{logger} = $params{logger} if ($params{logger} and blessed $params{logger});

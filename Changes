@@ -1,5 +1,8 @@
 Revision history for Crypt-LE
 
+0.38    27 May 2021
+        - Let's Encrypt API v1.0 deprecation (API v1.0 is still supported for custom servers and other providers).
+
 0.37    21 November 2020
         - Alternative certificates support.
 
