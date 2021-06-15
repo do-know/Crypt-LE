@@ -1239,7 +1239,7 @@ sub request_certificate {
         ($status, $content) = $self->_request($self->{finalize}, { csr => $csr });
         while ($status == SUCCESS and $content and $content->{status} and $content->{status} eq 'processing') {
             select(undef, undef, undef, $self->{delay});
-            ($status, $content) = $self->_request($self->{finalize}, { csr => $csr });
+            ($status, $content) = $self->_request($self->{location}, '');
             last if ($self->{try} and (++$try == $self->{try}));
         }
         if ($status == SUCCESS and $content and $content->{status}) {
