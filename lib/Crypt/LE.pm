@@ -124,7 +124,7 @@ use Crypt::OpenSSL::RSA;
 use JSON::MaybeXS;
 use HTTP::Tiny;
 use IO::File;
-use Digest::SHA 'sha256';
+use Digest::SHA qw<sha256 hmac_sha256>;
 use MIME::Base64 qw<encode_base64url decode_base64url decode_base64 encode_base64>;
 use Net::SSLeay qw<XN_FLAG_RFC2253 ASN1_STRFLGS_ESC_MSB MBSTRING_UTF8>;
 use Scalar::Util 'blessed';
@@ -748,8 +748,16 @@ Returns: OK | ERROR.
 
 sub register {
     my $self = shift;
+    my $eab_kid = shift;
+    my $eab_hmac_key = shift;
+
     my $req = { resource => 'new-reg' };
     $req->{contact} = [ "mailto:$self->{email}" ] if $self->{email};
+
+    if(length($eab_kid) && length($eab_hmac_key)) {
+        $req->{externalAccountBinding} = $self->_eab_jws($self->{jwk}, $self->{directory}->{'new-reg'}, {eab_kid => $eab_kid, eab_hmac_key => $eab_hmac_key});
+    }
+
     my ($status, $content) = $self->_request($self->{directory}->{'new-reg'}, $req);
     $self->{directory}->{reg} = $self->{location} if $self->{location};
     $self->{$_} = undef for (qw<registration_id contact_details>);
@@ -1157,7 +1165,7 @@ sub verify_challenge {
                 my @check = ($content->{uri});
                 push @check, '' if ($self->version() > 1);
                 my $try = 0;
-                while ($status == $expected_status and $content and $content->{status} and $content->{status} eq 'pending') {
+                while ($status == $expected_status and $content and $content->{status} and ($content->{status} eq 'pending' || $content->{status} eq 'processing')) {
                     select(undef, undef, undef, $self->{delay});
                     ($status, $content) = $self->_request(@check);
                     last if ($self->{try} and (++$try == $self->{try}));
@@ -1796,6 +1804,19 @@ sub _jwk {
         n   => encode_base64url(pack("H*", _to_hex($self->{key_params}->{n}))),
         e   => encode_base64url(pack("H*", _to_hex($self->{key_params}->{e}))),
     };
+}
+
+sub _eab_jws {
+    my $self = shift;
+    my ($obj, $url, $opts) = @_;
+    $opts ||= {};
+    return unless (defined $obj);
+    my $json = ref $obj ? encode_base64url($j->encode($obj)) : "";
+    my $protected = { alg => "HS256", kid => $opts->{eab_kid}, url => $url};
+    my $header = encode_base64url($j->encode($protected));
+    my $sig = encode_base64url(hmac_sha256("$header.$json", decode_base64url($opts->{eab_hmac_key})));
+    my $jws = { protected => $header, payload => $json, signature => $sig };
+    return $jws;
 }
 
 sub _jws {
