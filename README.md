@@ -315,7 +315,6 @@ perldoc command.
 You can also look for information at:
 
  * [RT, CPAN's request tracker (report bugs here)](http://rt.cpan.org/NoAuth/Bugs.html?Dist=Crypt-LE)
- * [AnnoCPAN, Annotated CPAN documentation](http://annocpan.org/dist/Crypt-LE)
  
 For feedback see:
 
@@ -335,7 +334,7 @@ You can also contribute the completion-handling modules under Crypt::LE::Complet
 
 ### LICENSE AND COPYRIGHT
 
-Copyright (C) 2016-2020 Alexander Yezhov
+Copyright (C) 2016-2021 Alexander Yezhov
 
 This program is free software; you can redistribute it and/or modify it
 under the terms of the the Artistic License (2.0). You may obtain a
