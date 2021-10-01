@@ -4,6 +4,8 @@ This module provides the functionality necessary to use Let's Encrypt API and ge
 
 > ### New [v0.38 maintenance release](https://github.com/do-know/Crypt-LE/releases) is available. This addresses the expiration of some root certificates (starting October 2021), so if you get an SSL error when using older Windows binaries, please make sure to upgrade. If you are using the Perl version of the client on some relatively old system, then please make sure to update the Mozilla::CA package (cpanm Mozilla::CA).
 
+> Unrelated to the client, if your Chrome shows you a  NET::ERR_CERT_AUTHORITY_INVALID when connecting to the sites using Let's Encrypt certificates, this means the servers in question may need to be restarted - see the [following article](https://medium.com/@BraunDoug/lets-encrypt-ssl-security-errors-starting-on-sep-30-2021-your-connection-is-not-private-417ca007fe07) for example. 
+
 **Both ACME v1 and ACME v2 protocols and wildcard certificate issuance are supported. Custom ACME servers are also supported.**
 
 _Please note that ACME v1 is being deprecated by Let's Encrypt and, starting from version 0.34 of the client, the default version selected is ACME v2 (unless you have specified the version explicitly using `--api` option or specified a custom server using `--server` option - in the latter case the client will use auto-sensing to select appropriate protocol version)._
