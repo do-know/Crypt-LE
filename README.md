@@ -2,6 +2,8 @@
 
 This module provides the functionality necessary to use Let's Encrypt API and generate free SSL certificates for your domains. It can also be used to generate private RSA/ECC keys and Certificate Signing Requests without resorting to openssl command line. Crypt::LE is shipped with a self-sufficient client for obtaining SSL certificates - `le.pl`. 
 
+> ### New [v0.38 maintenance release](https://github.com/do-know/Crypt-LE/releases) is available. This addresses the expiration of some root certificates (starting October 2021), so if you get an SSL error when using older Windows binaries, please make sure to upgrade. 
+
 **Both ACME v1 and ACME v2 protocols and wildcard certificate issuance are supported. Custom ACME servers are also supported.**
 
 _Please note that ACME v1 is being deprecated by Let's Encrypt and, starting from version 0.34 of the client, the default version selected is ACME v2 (unless you have specified the version explicitly using `--api` option or specified a custom server using `--server` option - in the latter case the client will use auto-sensing to select appropriate protocol version)._
