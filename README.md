@@ -36,6 +36,7 @@ Table of Contents
       * [Quick start on Windows](#quick-start-on-windows)
       * [Quick start on Linux/Mac](#quick-start-on-linuxmac)
       * [Usage examples](#usage-examples)
+      * [Two step flow](#two-step-flow)
       * [Other certificate providers and custom ACME servers](#other-certificate-providers-and-custom-acme-servers)
   * [Windows client](#windows-client)
   * [Wildcard certificates support](#wildcard-certificates-support)
@@ -143,6 +144,12 @@ Please note that with multiple webroots specified, the amount of those should ma
 For more examples, logging configuration and all available parameters overview use `--help`:
 
     le.pl --help
+    
+#### Two step flow
+
+If you want to run the process in two steps (accept a challenge and then continue after running some other process), you can use `--delayed` flag. That flag interrupts the process once the challenge is received and appropriate information about what is required is printed or logged.
+ 
+Once you have fulfilled the requirements (by either creating a verification file or a DNS record), you can re-run the process with exactly the same parameters, BUT without `--delayed` option.
     
 #### Other certificate providers and custom ACME servers
 
