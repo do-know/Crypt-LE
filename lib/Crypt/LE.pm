@@ -4,15 +4,15 @@ use 5.006;
 use strict;
 use warnings;
 
-our $VERSION = '0.38';
+our $VERSION = '0.39';
 
 =head1 NAME
 
-Crypt::LE - Let's Encrypt API interfacing module and client.
+Crypt::LE - Let's Encrypt (and other ACME-based) API interfacing module and client.
 
 =head1 VERSION
 
-Version 0.38
+Version 0.39
 
 =head1 SYNOPSIS
 
@@ -124,7 +124,7 @@ use Crypt::OpenSSL::RSA;
 use JSON::MaybeXS;
 use HTTP::Tiny;
 use IO::File;
-use Digest::SHA 'sha256';
+use Digest::SHA qw<sha256 hmac_sha256>;
 use MIME::Base64 qw<encode_base64url decode_base64url decode_base64 encode_base64>;
 use Net::SSLeay qw<XN_FLAG_RFC2253 ASN1_STRFLGS_ESC_MSB MBSTRING_UTF8>;
 use Scalar::Util 'blessed';
@@ -145,6 +145,28 @@ Net::SSLeay::OpenSSL_add_all_digests();
 our $keysize = 4096;
 our $keycurve = 'prime256v1';
 our $headers = { 'Content-type' => 'application/jose+json' };
+our $default_ca = 'letsencrypt.org';
+
+our $cas = {
+    'letsencrypt.org'    => {
+                                'live'  => 'https://acme-v02.api.letsencrypt.org/directory',
+                                'stage' => 'https://acme-staging-v02.api.letsencrypt.org/directory',
+                            },
+    'buypass.com'        => {
+                                'live'  => 'https://api.buypass.com/acme/directory',
+                                'stage' => 'https://api.test4.buypass.no/acme/directory',
+                            },
+    'ssl.com'            => {
+                                'live'  => 'https://acme.ssl.com/sslcom-dv-rsa',
+                            },
+    'zerossl.com'        => {
+                                'live'  => 'https://acme.zerossl.com/v2/DV90/directory',
+                            },
+    'google.com'         => {
+                                'live'  => 'https://dv.acme-v02.api.pki.goog/directory',
+                                'stage' => 'https://dv.acme-v02.test-api.pki.goog/directory',
+                            },
+};
 
 use constant {
     OK                     => 0,
@@ -264,6 +286,11 @@ server responses are printed as well.
 Full URL of a 'directory' handler on the server (the actual name of the handler can be different in certain configurations, where multiple handlers
 are mapped). Only needed if you are using a custom server supporting ACME protocol. This parameter replaces the 'server' one.
 
+=item C<ca>
+
+The name of CA (Certificate Authority) to use. If the name is found in the list of supported ones, the URLs to use will be automatically set.
+Please note that this parameter will be ignored if the 'directory' or 'server' are explicitly set.
+
 =item C<autodir>
 
 Enables automatic retrieval of the resource directory (required for normal API processing) from the servers. Enabled by default.
@@ -298,6 +325,7 @@ sub new {
     my $self = {
         ua      => '',
         server  => '',
+        ca      => '',
         dir     => '',
         live    => 0,
         debug   => 0,
@@ -312,17 +340,28 @@ sub new {
     # Init UA
     $self->{ua} = HTTP::Tiny->new( agent => $self->{ua} || __PACKAGE__ . " v$VERSION", verify_SSL => 1 );
     # Init server
+    my $opts;
     if ($self->{server}) {
         # Custom server - drop the protocol if given (defaults to https later). If that leaves nothing, the check below
         # will set the servers to LE standard ones.
         $self->{server}=~s~^\w+://~~;
-    }
-    if ($self->{dir}) {
+    } elsif ($self->{dir}) {
         $self->{dir} = "https://$self->{dir}" unless $self->{dir}=~m~^https?://~i;
+    } elsif ($self->{ca}) {
+        $opts = $cas->{lc($self->{ca})} || $cas->{$default_ca};
+    } else {
+        $opts = $cas->{$default_ca};
     }
-    unless ($self->{server}) {
-        $self->{server} = $self->{live} ? 'acme-v02.api.letsencrypt.org' : 'acme-staging-v02.api.letsencrypt.org';
+
+    if ($opts) {
+        # Only check for live option if the 'stage' is supported by CA. Otherwise use live URL.
+        if ($opts->{'stage'}) {
+            $self->{dir} = $self->{live} ? $opts->{live} : $opts->{stage};
+        } else {
+            $self->{dir} = $opts->{live};
+        }
     }
+
     # Init logger
     $self->{logger} = $params{logger} if ($params{logger} and blessed $params{logger});
     bless $self, $class;
@@ -738,19 +777,20 @@ sub new_nonce {
     return $self->{nonce};
 }
 
-=head2 register()
+=head2 register([$kid, $mac])
 
 Registers an account key with Let's Encrypt. If the key is already registered, it will be handled automatically.
+Accepts optional $kid (eab-kid) and $mac (eab-hmac-key) parameters - those are used for EAB (External Account Binding).
 
 Returns: OK | ERROR.
 
 =cut
 
 sub register {
-    my $self = shift;
+    my ($self, $kid, $mac) = @_;
     my $req = { resource => 'new-reg' };
     $req->{contact} = [ "mailto:$self->{email}" ] if $self->{email};
-    my ($status, $content) = $self->_request($self->{directory}->{'new-reg'}, $req);
+    my ($status, $content) = $self->_request($self->{directory}->{'new-reg'}, $req, { kid => $kid, mac => $mac });
     $self->{directory}->{reg} = $self->{location} if $self->{location};
     $self->{$_} = undef for (qw<registration_id contact_details>);
     if ($status == $self->_compat_response(ALREADY_DONE)) {
@@ -778,6 +818,13 @@ sub register {
             $tos_message = "You need to accept TOS at $self->{links}->{'terms-of-service'}";
         }
         $self->_debug("New key is now registered, reg path: $self->{directory}->{reg}. $tos_message");
+    } elsif ($status == BAD_REQUEST and $kid and $mac and $self->_pull_error($content)=~/not awaiting/) {
+        # EAB credentials were already associated with the key.
+        if ($self->{directory}->{reg}) {
+            $self->_debug("EAB credentials already associated. Account URL is: $self->{directory}->{reg}.");
+        } else {
+            return $self->_status(ERROR, "EAB credentials already associated and no EAB id was provided.");
+        }
     } else {
         return $self->_status(ERROR, $content);
     }
@@ -1155,13 +1202,8 @@ sub verify_challenge {
             $content->{uri} ||= $content->{url};
             if ($content->{uri}) {
                 my @check = ($content->{uri});
-                push @check, '' if ($self->version() > 1);
-                my $try = 0;
-                while ($status == $expected_status and $content and $content->{status} and $content->{status} eq 'pending') {
-                    select(undef, undef, undef, $self->{delay});
-                    ($status, $content) = $self->_request(@check);
-                    last if ($self->{try} and (++$try == $self->{try}));
-                }
+                push @check, $self->version() > 1 ? '' : undef;
+                ($status, $content) = $self->_await(@check, { status => $expected_status });
                 if ($status == $expected_status and $content and $content->{status}) {
                     if ($content->{status}=~/^(?:in)?valid$/) {
                         if ($content->{status} eq 'valid') {
@@ -1222,7 +1264,7 @@ sub request_certificate {
     my $self = shift;
     return $self->_status(ERROR, "CSR is missing, make sure it has been either loaded or generated.") unless $self->{csr};
     my $csr = encode_base64url($self->pem2der($self->{csr}));
-    my ($status, $content);
+    my ($status, $content, $ready);
     delete $self->{authz};
     delete $self->{alternatives};
     unless ($self->{finalize}) {
@@ -1235,13 +1277,12 @@ sub request_certificate {
     }
     if ($self->{finalize}) {
         # v2. Let's attempt to finalize the order immediately.
-        my ($ready, $try) = (0, 0);
         ($status, $content) = $self->_request($self->{finalize}, { csr => $csr });
-        while ($status == SUCCESS and $content and $content->{status} and $content->{status} eq 'processing') {
-            select(undef, undef, undef, $self->{delay});
-            ($status, $content) = $self->_request($self->{finalize}, { csr => $csr });
-            last if ($self->{try} and (++$try == $self->{try}));
+        if (ref $content eq 'HASH' and $content->{status} and $content->{status} eq 'processing') {
+            # The order is not ready yet - poll until it is (or we hit the retries set, with the default of 300).
+            ($status, $content) = $self->_await($self->{location}, '');
         }
+
         if ($status == SUCCESS and $content and $content->{status}) {
             if ($content->{status} eq 'valid') {
                 if ($content->{certificate}) {
@@ -1538,6 +1579,41 @@ sub verified_domains {
     return @list ? \@list : undef;
 }
 
+=head2 ca_list()
+
+Returns: An array of names of the directly supported CAs.
+
+=cut
+
+sub ca_list {
+    return keys %{$cas};
+}
+
+=head2 ca_supported($name)
+
+Returns: True if CA is directly supported, or false otherwise.
+
+=cut
+
+sub ca_supported {
+    my ($self, $ca) = @_;
+    return undef unless $ca;
+    return $cas->{lc $ca} ? 1 : 0;
+}
+
+=head2 ca_supported_staging($name)
+
+Returns: True if CA is directly supported and has staging environment, or false otherwise.
+
+=cut
+
+sub ca_supported_staging {
+    my ($self, $ca) = @_;
+    return undef unless $ca;
+    $ca = lc $ca;
+    return ($cas->{$ca} and $cas->{$ca}->{stage}) ? 1 : 0;
+}
+
 =head2 check_expiration($certificate_file|$scalar_ref|$url, [ \%params ])
 
 Checks the expiration of the certificate. Accepts an URL, a full path to the certificate file or a
@@ -1785,7 +1861,26 @@ sub _request {
     }
     $self->{links} = $resp->{headers}->{link} ? $self->_links($resp->{headers}->{link}) : undef;
     $self->{location} = $resp->{headers}->{location} ? $resp->{headers}->{location} : undef;
+    if ($resp->{headers}->{'retry-after'} and $resp->{headers}->{'retry-after'}=~/^(\d+)$/) {
+        $self->{retry} = $1; # Set retry based on the last request where it was present, do not reset.
+    }
+
     return wantarray ? ($status, $rv) : $rv;
+}
+
+sub _await {
+    my $self = shift;
+    my ($url, $payload, $opts) = @_;
+    my ($ready, $try, $status, $content) = (0, 0);
+    $opts ||= {};
+    my $expected_status = $opts->{status} || SUCCESS;
+    ($status, $content) = $self->_request($url, $payload, $opts);
+    while ($status == $expected_status and $content and $content->{status} and $content->{status}=~/^(?:pending|processing)$/) {
+        select(undef, undef, undef, $self->{retry} || $self->{delay});
+        ($status, $content) = $self->_request($url, $payload, $opts);
+        last if ($self->{try} and (++$try == $self->{try}));
+    }
+    return ($status, $content);
 }
 
 sub _jwk {
@@ -1811,7 +1906,21 @@ sub _jws {
             delete $protected->{jwk};
         }
         $protected->{url} = $url;
+        # EAB registration
+        if ($opts->{kid} and $opts->{mac}) {
+            my $eab_protected = { alg => "HS256", kid => $opts->{kid}, url => $url };
+            my $eab_header = encode_base64url($j->encode($eab_protected));
+            my $eab_payload = encode_base64url($j->encode($self->{jwk}));
+            my $mac = decode_base64url($opts->{mac});
+            my $eab_sig = encode_base64url(hmac_sha256("$eab_header.$eab_payload", $mac));
+            $obj->{externalAccountBinding} = {
+                protected => $eab_header,
+                payload => $eab_payload,
+                signature => $eab_sig,
+            };
+        }
     }
+    $json = ref $obj ? encode_base64url($j->encode($obj)) : "";
     my $header = encode_base64url($j->encode($protected));
     my $sig = encode_base64url($self->{key}->sign("$header.$json"));
     my $jws = $j->encode({ protected => $header, payload => $json, signature => $sig });

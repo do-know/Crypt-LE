@@ -13,7 +13,7 @@ use MIME::Base64 'encode_base64url';
 use Crypt::LE ':errors', ':keys';
 use utf8;
 
-my $VERSION = '0.38';
+my $VERSION = '0.39';
 
 exit main();
 
@@ -35,14 +35,26 @@ sub work {
     # Set the default protocol version to 2 unless it is set explicitly or custom server/directory is set (in which case auto-sense is used).
     $opt->{'api'} = 2 unless (defined $opt->{'api'} or $opt->{'server'} or $opt->{'directory'});
     my $le = Crypt::LE->new(
-	autodir => 0,
-	dir => $opt->{'directory'},
-	server => $opt->{'server'},
-	live => $opt->{'live'},
-	version => $opt->{'api'}||0,
-	debug => $opt->{'debug'},
-	logger => $opt->{'logger'},
+        autodir => 0,
+        dir => $opt->{'directory'},
+        server => $opt->{'server'},
+        ca => $opt->{'ca'},
+        live => $opt->{'live'},
+        version => $opt->{'api'}||0,
+        debug => $opt->{'debug'},
+        logger => $opt->{'logger'},
     );
+
+    # Check if CA is supported if it was specified explicitly.
+    if ($opt->{'ca'}) {
+        unless ($le->ca_supported($opt->{'ca'})) {
+            return $opt->{'error'}->("Unsupported CA specified. Supported are: " . join(', ', sort $le->ca_list), 'CA_SUPPORT');
+        }
+        # Check whether 'live' option is NOT set, in which case CA should support staging.
+        if (!$opt->{'live'} and !$le->ca_supported_staging($opt->{'ca'})) {
+            return $opt->{'error'}->("CA does not support staging environment, please specify 'live' explicitly.", 'CA_SUPPORT');
+        }
+    }
 
     if (-r $opt->{'key'}) {
         $opt->{'logger'}->info("Loading an account key from $opt->{'key'}");
@@ -120,7 +132,7 @@ sub work {
         my ($type, $attr) = $opt->{'curve'} ? (KEY_ECC, $opt->{'curve'}) : (KEY_RSA, $opt->{'legacy'} ? 2048 : 4096);
         $le->generate_csr($opt->{'domains'}, $type, $attr) == OK or return $opt->{'error'}->("Could not generate a CSR: " . $le->error_details, 'CSR_GENERATE');
         $opt->{'logger'}->info("Saving a new CSR into $opt->{'csr'}");
-        return "Failed to save a CSR" if _write($opt->{'csr'}, $le->csr);
+        return $opt->{'error'}->("Failed to save a CSR", 'CSR_SAVE') if _write($opt->{'csr'}, $le->csr);
         unless (-e $opt->{'csr-key'}) {
             $opt->{'logger'}->info("Saving a new CSR key into $opt->{'csr-key'}");
             return $opt->{'error'}->("Failed to save a CSR key", 'CSR_SAVE') if _write($opt->{'csr-key'}, $le->csr_key);
@@ -280,7 +292,7 @@ sub parse_options {
 
     GetOptions ($opt, 'key=s', 'csr=s', 'csr-key=s', 'domains=s', 'path=s', 'crt=s', 'email=s', 'curve=s', 'server=s', 'directory=s', 'api=i', 'config=s', 'renew=i', 'renew-check=s','issue-code=i',
         'handle-with=s', 'handle-as=s', 'handle-params=s', 'complete-with=s', 'complete-params=s', 'log-config=s', 'update-contacts=s', 'export-pfx=s', 'tag-pfx=s',
-        'alternative=i', 'generate-missing', 'generate-only', 'revoke', 'legacy', 'unlink', 'delayed', 'live', 'quiet', 'debug+', 'help') ||
+        'eab-kid=s', 'eab-hmac-key=s', 'ca=s', 'alternative=i', 'generate-missing', 'generate-only', 'revoke', 'legacy', 'unlink', 'delayed', 'live', 'quiet', 'debug+', 'help') ||
         return $opt->{'error'}->("Use --help to see the usage examples.", 'PARAMETERS_PARSE');
 
     if ($opt->{'config'}) {
@@ -296,17 +308,30 @@ sub parse_options {
     $opt->{'logger'}->info("[ Crypt::LE client v$VERSION started. ]");
     my $custom_server;
 
+    return $opt->{'error'}->("Please use either 'server' or 'directory', but not both.", 'PARAMETERS_CONFLICT') if ($opt->{'server'} and $opt->{'directory'});
+
+    if ($opt->{'eab-kid'} or $opt->{'eab-hmac-key'}) {
+        return $opt->{'error'}->("Please specify both eab-kid and eab-hmac-key.", 'PARAMETERS_CONFLICT') unless ($opt->{'eab-kid'} and $opt->{'eab-hmac-key'});
+    }
+
     foreach my $url_type (qw<server directory>) {
         if ($opt->{$url_type}) {
             return $opt->{'error'}->("Unsupported protocol for the custom $url_type URL: $1.", 'CUSTOM_' . uc($url_type) . '_URL') if ($opt->{$url_type}=~s~^(.*?)://~~ and uc($1) ne 'HTTPS');
             my $server = $opt->{$url_type}; # For logging.
             $opt->{'logger'}->warn("Remember to URL-escape special characters if you are using $url_type URL with basic auth credentials.") if $server=~s~[^@/]*@~~;
             $opt->{'logger'}->info("Custom $url_type URL 'https://$server' is used.");
-            $opt->{'logger'}->warn("Note: '$url_type' setting takes over the 'server' one.") if $custom_server;
             $custom_server = 1;
         }
     }
-    $opt->{'logger'}->warn("Note: 'live' option is ignored.") if ($opt->{'live'} and $custom_server);
+
+    if ($custom_server) {
+        return $opt->{'error'}->("Please do not use 'ca' when the custom server is set explicitly.", 'PARAMETERS_CONFLICT') if $opt->{'ca'};
+        # Ignore options which do not make sense if the custom server/directory is specified.
+        if ($opt->{'live'}) {
+            $opt->{'logger'}->warn("Note: 'live' option is ignored when the custom server/directory is set.");
+            undef $opt->{'live'};
+        }
+    }
 
     if ($opt->{'renew-check'}) {
         $opt->{'error'}->("Unsupported protocol for the renew check URL: $1.", 'RENEW_CHECK_URL') if ($opt->{'renew-check'}=~s~^(.*?)://~~ and uc($1) ne 'HTTPS');
@@ -494,7 +519,7 @@ sub _register {
     my ($le, $opt) = @_;
     return $opt->{'error'}->("Could not load the resource directory: " . $le->error_details, 'RESOURCE_DIRECTORY_LOAD') if $le->directory;
     $opt->{'logger'}->info("Registering the account key");
-    return $opt->{'error'}->($le->error_details, 'REGISTRATION') if $le->register;
+    return $opt->{'error'}->($le->error_details, 'REGISTRATION') if $le->register($opt->{'eab-kid'}, $opt->{'eab-hmac-key'});
     my $current_account_id = $le->registration_id || 'unknown';
     $opt->{'logger'}->info($le->new_registration ? "The key has been successfully registered. ID: $current_account_id" : "The key is already registered. ID: $current_account_id");
     $opt->{'logger'}->info("Make sure to check TOS at " . $le->tos) if ($le->tos_changed and $le->tos);
@@ -850,6 +875,9 @@ EOF
 -email <some@mail.address>   : Email for expiration notifications (optional).
 -server <url|host>           : Custom server URL for API root (optional).
 -directory <url>             : Custom server URL for API directory (optional).
+-ca <name>                   : Custom CA to use (optional).
+-eab-kid                     : External Account Binding 'kid' parameter (optional).
+-eab-hmac-key                : External Account Binding 'hmac-key' parameter (optional).
 -api <version>               : API version to use (optional).
 -update-contacts <emails>    : Update contact details.
 -export-pfx <password>       : Export PFX (Windows binaries only).
