@@ -1,5 +1,12 @@
 Revision history for Crypt-LE
 
+0.39    11 March 2023
+        - EAB (External Account Binding) support used by some CAs.
+        - Asynchronous order finalization support.
+        - Server-indicated retry intervals support.
+        - Direct support of known ACME-compatible CAs via 'ca' parameter.
+        - Minor fixes and documentation updates.
+
 0.38    27 May 2021
         - Let's Encrypt API v1.0 deprecation (API v1.0 is still supported for custom servers and other providers).
 
