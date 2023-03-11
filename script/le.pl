@@ -876,8 +876,8 @@ EOF
 -server <url|host>           : Custom server URL for API root (optional).
 -directory <url>             : Custom server URL for API directory (optional).
 -ca <name>                   : Custom CA to use (optional).
--eab-kid                     : External Account Binding 'kid' parameter (optional).
--eab-hmac-key                : External Account Binding 'hmac-key' parameter (optional).
+-eab-kid <value>             : External Account Binding 'kid' parameter (optional).
+-eab-hmac-key <value>        : External Account Binding 'hmac-key' parameter (optional).
 -api <version>               : API version to use (optional).
 -update-contacts <emails>    : Update contact details.
 -export-pfx <password>       : Export PFX (Windows binaries only).
