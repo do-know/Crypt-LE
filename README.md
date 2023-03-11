@@ -2,15 +2,15 @@
 
 This module provides the functionality necessary to use Let's Encrypt API and generate free SSL certificates for your domains. It can also be used to generate private RSA/ECC keys and Certificate Signing Requests without resorting to openssl command line. Crypt::LE is shipped with a self-sufficient client for obtaining SSL certificates - `le.pl`. 
 
-> ### New [v0.38 maintenance release](https://github.com/do-know/Crypt-LE/releases) is available. This addresses the expiration of some root certificates (starting October 2021), so if you get an SSL error when using older Windows binaries, please make sure to upgrade. If you are using the Perl version of the client on some relatively old system, then please make sure to update the Mozilla::CA package (cpanm Mozilla::CA).
-
-> Unrelated to the client, if your Chrome shows you a  NET::ERR_CERT_AUTHORITY_INVALID when connecting to the sites using Let's Encrypt certificates, this means the servers in question may need to be restarted - see the [following article](https://medium.com/@BraunDoug/lets-encrypt-ssl-security-errors-starting-on-sep-30-2021-your-connection-is-not-private-417ca007fe07) for example. 
+> ### New [v0.39 release](https://github.com/do-know/Crypt-LE/releases) is available. This introduces some new features, such as:
+- EAB (External Account Binding) support used by some CAs.
+- Asynchronous order finalization support, which awaits for order completion respecting the retry intervals indicated by the CA.
+- Direct support of known ACME-compatible CAs via `ca` parameter, so you do not need to remember which URL some specific CA is using.
+> Such directly supported CAs are: buypass.com, google.com, letsencrypt.org, ssl.com, zerossl.com. See the examples of using different CAs in the [Other certificate providers and custom ACME servers](#other-certificate-providers-and-custom-acme-servers) section below.
 
 **Both ACME v1 and ACME v2 protocols and wildcard certificate issuance are supported. Custom ACME servers are also supported.**
 
 _Please note that ACME v1 is being deprecated by Let's Encrypt and, starting from version 0.34 of the client, the default version selected is ACME v2 (unless you have specified the version explicitly using `--api` option or specified a custom server using `--server` option - in the latter case the client will use auto-sensing to select appropriate protocol version)._
-
-**Note:** If you do not need the automation and the flexibility this package offers, and just want to get a free SSL certificate without installing anything, you can do that online on **[ZeroSSL.com](https://zerossl.com/)**.
 
 #### COMPATIBILITY
 
@@ -153,12 +153,38 @@ Once you have fulfilled the requirements (by either creating a verification file
     
 #### Other certificate providers and custom ACME servers
 
-By default the client uses Let's Encrypt CA (Certificate Authority) to get SSL certificates. However, you can also use it with other ACME-compatible servers by pointing to the "directory root" of such server with `-server` option. For example, you can use the client to obtain the certificate from Buypass CA (another Certificate Authority supporting [free certificate issuance](https://www.buypass.com/ssl/products/acme) using ACME protocol):
+By default the client uses Let's Encrypt CA (Certificate Authority) to get SSL certificates. However, you can also use it with other ACME-compatible servers. Please note that those might have different limitations or requirements - for example, ZeroSSL does not have the staging/testing environment, and it also uses so-called EAB (External Account BInding), so you will need to use 2 parameters retrieved from the Developer's section of your ZeroSSL account - `eab-kid` and `eab-hmac-key`, and use those for your command. Another CA, such as Bypass, does have a testing environment, and it does not use EAB, but requires for the email address to be specified. It also does not support more than 5 domains on one certificate and does not support wildcards.
 
-    le.pl -server https://api.buypass.com/acme -email test@example.org -key account.key -csr domain.csr -csr-key domain.key -crt domain.crt -domains test.example.org -generate-missing
-    
-For Buypass test environment use `-server https://api.test4.buypass.no/acme` (you do not need to use `-live` option when using custom ACME servers). Please note that email has to be specified for Buypass certificates and at the moment of writing they do not support more than 5 domains on one certificate and do not support wildcards.
-    
+##### Some examples:
+
+1. Using ZeroSSL, providing the `server` parameter explicitly (**to be deprecated**), and providing eab-kid and eab-hmac-key:
+
+> le.pl --csr domain.csr --csr-key domain.key --domains "some.domain.tld" --crt domain.crt --generate-missing --server https://acme.zerossl.com/v2/DV90 --eab-kid ... --eab-hmac-key ... --key my.key
+
+2. Using ZeroSSL, providing the `directory` parameter explicitly, and providing eab-kid and eab-hmac-key:
+
+> le.pl --csr domain.csr --csr-key domain.key --domains "some.domain.tld" --crt domain.crt --generate-missing --directory https://acme.zerossl.com/v2/DV90/directory --eab-kid ... --eab-hmac-key ... --key my.key
+
+3. Using ZeroSSL, providing the `ca` parameter, and providing eab-kid and eab-hmac-key:
+
+> le.pl --csr domain.csr --csr-key domain.key --domains "some.domain.tld" --crt domain.crt --generate-missing --ca zerossl.com --eab-kid ... --eab-hmac-key ... --key my.key --live
+
+(notice the --live parameter in this case - that is because there is no staging environment, so running the command without `--live` would produce an error "CA does not support staging environment, please specify 'live' explicitly.")
+
+4. Using Buypass.com (staging environment):
+
+> le.pl --csr domain.csr --csr-key domain.key --domains "some.domain.tld" --crt domain.crt --generate-missing --ca buypass.com --key my.key --email "admin@domain.tld"
+
+(notice that email parameter is mandatory for this CA, and without it you would get an error "Email is a required contact")
+
+5. Using Buypass.com (production environment):
+
+> le.pl --csr domain.csr --csr-key domain.key --domains "some.domain.tld" --crt domain.crt --generate-missing --ca buypass.com --key my.key --email "admin@domain.tld" --live
+
+(notice that email parameter is mandatory for this CA, and without it you would get an error "Email is a required contact")
+
+*The CAs which are directly supported by name are currently these:* [buypass.com](https://www.buypass.com/products/tls-ssl-certificates/go-ssl), [google.com](https://cloud.google.com/blog/products/identity-security/automate-public-certificate-lifecycle-management-via--acme-client-api), [letsencrypt.org](https://letsencrypt.org/docs/), [ssl.com](https://www.ssl.com/how-to/order-free-90-day-ssl-tls-certificates-with-acme/), [zerossl.com](https://zerossl.com/documentation/acme/).
+
 ### WINDOWS CLIENT
 
 Everything described [above](#client) for the Perl client is applicable to the Windows client, which you can download from the [Releases page](https://github.com/do-know/Crypt-LE/releases). The only difference is that you will be running either le32.exe or le64.exe (depending on your platform) instead of le.pl. There is one thing though you need to take into account when you are specifying the `--path` to store verification files for the HTTP verification on Windows:
