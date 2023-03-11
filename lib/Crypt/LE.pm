@@ -2126,7 +2126,7 @@ L<https://Do-Know.com/>
 
 =head1 LICENSE AND COPYRIGHT
 
-Copyright 2016-2020 Alexander Yezhov.
+Copyright 2016-2023 Alexander Yezhov.
 
 This program is free software; you can redistribute it and/or modify it
 under the terms of the Artistic License (2.0). You may obtain a

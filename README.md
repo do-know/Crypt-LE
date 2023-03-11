@@ -371,7 +371,7 @@ You can also contribute the completion-handling modules under Crypt::LE::Complet
 
 ### LICENSE AND COPYRIGHT
 
-Copyright (C) 2016-2021 Alexander Yezhov
+Copyright (C) 2016-2023 Alexander Yezhov
 
 This program is free software; you can redistribute it and/or modify it
 under the terms of the the Artistic License (2.0). You may obtain a

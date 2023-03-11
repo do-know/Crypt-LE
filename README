@@ -1,8 +1,8 @@
 Crypt-LE
 
-The Crypt::LE module provides the functionality necessary to use Let's Encrypt API and generate free SSL 
-certificates for your domains. It can also be used to generate private RSA (and from version 0.20 also ECC)
-keys or Certificate Signing Requests without resorting to openssl command line.
+The Crypt::LE module provides the functionality necessary to use the API of Let's Encrypt API and other ACME-compatible
+CAs, and to generate free SSL certificates for your domains. It can also be used to generate private RSA and ECC keys or
+Certificate Signing Requests without resorting to openssl command line.
 
 
 COMPATIBILITY
@@ -184,7 +184,7 @@ For feedback or custom development requests see:
 
 LICENSE AND COPYRIGHT
 
-Copyright (C) 2016-2020 Alexander Yezhov
+Copyright (C) 2016-2023 Alexander Yezhov
 
 This program is free software; you can redistribute it and/or modify it
 under the terms of the the Artistic License (2.0). You may obtain a
