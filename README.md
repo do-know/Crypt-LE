@@ -3,7 +3,7 @@
 This module provides the functionality necessary to use Let's Encrypt API and generate free SSL certificates for your domains. It can also be used to generate private RSA/ECC keys and Certificate Signing Requests without resorting to openssl command line. Crypt::LE is shipped with a self-sufficient client for obtaining SSL certificates - `le.pl`. 
 
 > ### New [v0.39 release](https://github.com/do-know/Crypt-LE/releases) is available. This introduces some new features, such as:
-- EAB (External Account Binding) support used by some CAs.
+- EAB (External Account Binding) support used by some CAs (via `eab-kid` and `eab-hmac-key` parameters).
 - Asynchronous order finalization support, which awaits for order completion respecting the retry intervals indicated by the CA.
 - Direct support of known ACME-compatible CAs via `ca` parameter, so you do not need to remember which URL some specific CA is using.
 > Such directly supported CAs are: buypass.com, google.com, letsencrypt.org, ssl.com, zerossl.com. You do not need to know or specify the URLs for those - only their name in the `ca` parameter. See the examples of using different CAs in the [Other certificate providers and custom ACME servers](#other-certificate-providers-and-custom-acme-servers) section below.
