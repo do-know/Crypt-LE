@@ -6,11 +6,11 @@ This module provides the functionality necessary to use Let's Encrypt API and ge
 - EAB (External Account Binding) support used by some CAs (via `eab-kid` and `eab-hmac-key` parameters).
 - Asynchronous order finalization support, which awaits for order completion respecting the retry intervals indicated by the CA.
 - Direct support of known ACME-compatible CAs via `ca` parameter, so you do not need to remember which URL some specific CA is using.
-> Such directly supported CAs are: buypass.com, google.com, letsencrypt.org, ssl.com, zerossl.com. You do not need to know or specify the URLs for those - only their name in the `ca` parameter. See the examples of using different CAs in the [Other certificate providers and custom ACME servers](#other-certificate-providers-and-custom-acme-servers) section below.
+> Such directly supported CAs are: **buypass.com**, **google.com**, **letsencrypt.org**, **ssl.com**, **zerossl.com**. You do not need to know or specify the URLs for those - only their name in the `ca` parameter. See the examples of using different CAs in the [Other certificate providers and custom ACME servers](#other-certificate-providers-and-custom-acme-servers) section below.
 
-> _Any other custom ACME-compatible CA can also be used by specifying the URL for its directory in the `directory` parameter_.
+> **Any other ACME-compatible CA can also be used by specifying the URL for its directory in the `directory` parameter**.
 
-**Both ACME v1 and ACME v2 protocols and wildcard certificate issuance are supported. Custom ACME servers are also supported.**
+**Both ACME v1 and ACME v2 protocols and wildcard certificate issuance are supported.**
 
 _Please note that ACME v1 is being deprecated by Let's Encrypt and, starting from version 0.34 of the client, the default version selected is ACME v2 (unless you have specified the version explicitly using `--api` option or specified a custom server using `--server` option - in the latter case the client will use auto-sensing to select appropriate protocol version)._
 
@@ -185,7 +185,9 @@ By default the client uses Let's Encrypt CA (Certificate Authority) to get SSL c
 
 (notice that email parameter is mandatory for this CA, and without it you would get an error "Email is a required contact")
 
-*The CAs which are directly supported by name are currently these:* [buypass.com](https://www.buypass.com/products/tls-ssl-certificates/go-ssl), [google.com](https://cloud.google.com/blog/products/identity-security/automate-public-certificate-lifecycle-management-via--acme-client-api), [letsencrypt.org](https://letsencrypt.org/docs/), [ssl.com](https://www.ssl.com/how-to/order-free-90-day-ssl-tls-certificates-with-acme/), [zerossl.com](https://zerossl.com/documentation/acme/).
+> *The CAs which are directly supported by name are currently these:* [buypass.com](https://www.buypass.com/products/tls-ssl-certificates/go-ssl), [google.com](https://cloud.google.com/blog/products/identity-security/automate-public-certificate-lifecycle-management-via--acme-client-api), [letsencrypt.org](https://letsencrypt.org/docs/), [ssl.com](https://www.ssl.com/how-to/order-free-90-day-ssl-tls-certificates-with-acme/), [zerossl.com](https://zerossl.com/documentation/acme/).
+
+> **If CA is ACME-compatible, but not listed above, it would still be supported as long as you know the correct directory URL to specify via a `directory` parameter - for example, Digicert is supported, but you would need to [get a unique directory URL](https://docs.digicert.com/en/certcentral/certificate-tools/certificate-lifecycle-automation-guides/use-a-third-party-acme-client-for-host-automations.html) along with the values for the `eab-kid` and `eab-hmac-key` parameters.**
 
 ### WINDOWS CLIENT
 
