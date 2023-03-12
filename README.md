@@ -44,6 +44,7 @@ Table of Contents
   * [Wildcard certificates support](#wildcard-certificates-support)
   * [PFX/P12 (IIS) support](#pfxp12-iis-support)
   * [IDN (internationalized domain names) support](#idn-internationalized-domain-names-support)
+  * [EAB (External Account Binding) support](#eab-external-account-binding-support)
   * [Alternative certificates support](#alternative-certificates-support)
   * [Renewals](#renewals)
   * [Contact details updates](#contact-details-updates)
@@ -234,6 +235,14 @@ By default, exported PFX file will be seen as "Crypt::LE exported" under the "Fr
 
 If you are using IDN (Internationalized Domain Names) and generating a certificate for those, you can either encode those into "[punycode](https://www.punycoder.com/)" form by yourself, or let the client do that for you. Please note that for the
 conversion to work properly you need to have correct locale settings on your system. For Linux-based systems you can check that with the "locale" command, for Windows make sure that "System locale" in the Control Panel is set correctly.
+
+### EAB (EXTERNAL ACCOUNT BINDING) SUPPORT
+
+Some ACME-compatible Certificate Authorities manage their accounts differently from how ACME accounts are normally created, but link those to an ACME
+account through so-called External Account Binding. In essence, you would need to get 2 additional parameters from those CAs and use those on the command
+line. Those parameters are the "Key ID" (`eab-kid`) and "HMAC Key" (`eab-hmac-key`).
+
+Please note that the same EAB credentials, depending on the CA, might be allowed to be used for multiple ACME accounts or just one.
 
 ### ALTERNATIVE CERTIFICATES SUPPORT
 
