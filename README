@@ -98,6 +98,13 @@ If you are using IDN (Internationalized Domain Names) and generating a certifica
 or let the client do that for you. Please note that for the conversion to work properly you need to have correct locale settings on your system. For
 Linux-based systems you can check that with the "locale" command, for Windows make sure that "System locale" in the Control Panel is set correctly.
 
+EAB (EXTERNAL ACCOUNT BINDING) SUPPORT
+
+Some ACME-compatible Certificate Authorities manage their accounts differently from how ACME accounts are normally created, but link those to an ACME
+account through so-called External Account Binding. In essence, you would need to get 2 additional parameters from those CAs and use those on the command
+line. Those parameters are the "Key ID" ('eab-kid') and "HMAC Key" ('eab-hmac-key').
+
+Please note that the same EAB credentials, depending on the CA, might be allowed to be used for multiple ACME accounts or just one.
 
 PLUGINS
 
