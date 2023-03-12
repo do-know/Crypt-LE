@@ -6,7 +6,9 @@ This module provides the functionality necessary to use Let's Encrypt API and ge
 - EAB (External Account Binding) support used by some CAs.
 - Asynchronous order finalization support, which awaits for order completion respecting the retry intervals indicated by the CA.
 - Direct support of known ACME-compatible CAs via `ca` parameter, so you do not need to remember which URL some specific CA is using.
-> Such directly supported CAs are: buypass.com, google.com, letsencrypt.org, ssl.com, zerossl.com. See the examples of using different CAs in the [Other certificate providers and custom ACME servers](#other-certificate-providers-and-custom-acme-servers) section below.
+> Such directly supported CAs are: buypass.com, google.com, letsencrypt.org, ssl.com, zerossl.com. You do not need to know or specify the URLs for those - only their name in the `ca` parameter. See the examples of using different CAs in the [Other certificate providers and custom ACME servers](#other-certificate-providers-and-custom-acme-servers) section below.
+
+> _Any other custom ACME-compatible CA can also be used by specifying the URL for its directory in the `directory` parameter_.
 
 **Both ACME v1 and ACME v2 protocols and wildcard certificate issuance are supported. Custom ACME servers are also supported.**
 
