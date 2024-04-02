@@ -175,7 +175,7 @@ sub rr_from_fqdn {
 sub handle_challenge_dns {
     my ($self, $challenge, $params) = @_;
     # print STDERR Dumper $challenge;
-    print STDERR Dumper $params;
+    # print STDERR Dumper $params;
     my ($zone, $server, $keyfile) = _sanitize_params($params);
 
     my $logger = $challenge->{logger};
