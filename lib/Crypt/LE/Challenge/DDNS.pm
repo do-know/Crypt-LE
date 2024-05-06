@@ -165,6 +165,8 @@ sub _sanitize_params {
 sub rr_from_fqdn {
     my ($fqdn, $zone) = @_;
 
+    $fqdn =~ s/\A\*\.//; # wildcard records use the base name
+
     if ($fqdn =~ /\.$zone\z/) {
 	return "_acme-challenge.$fqdn.";
     } else {
@@ -189,7 +191,9 @@ sub handle_challenge_dns {
     my $rrname = rr_from_fqdn($fqdn, $zone);
 
     my $update = new Net::DNS::Update($zone, 'IN');
-    $update->push(update => rr_del("$rrname TXT"));
+    if (!$self->{fqdn_seen}->{$rrname}++) {
+        $update->push(update => rr_del("$rrname TXT"));
+    }
     $update->push(update => rr_add(qq{$rrname $TTL TXT $text}));
     $update->sign_tsig($keyfile);
 
@@ -222,12 +226,17 @@ sub handle_verification_dns {
     my $rrname = rr_from_fqdn($fqdn, $zone);
     $logger->info("DNS verification for $fqdn:");
 
-    if ($results->{valid}) {
-        $logger->info("Success for $fqdn.");
-    } else {
+    if (!$results->{valid}) {
         $logger->error("FAILURE for $fqdn: $results->{error}");
+        $logger->info("Keeping the $rrname record at $server");
+        return undef;
     }
 
+    $logger->info("Success for $fqdn.");
+
+    return 1 if --$self->{fqdn_seen}->{$rrname};
+
+    # Delete only the last instance:
     my $update = new Net::DNS::Update($zone, 'IN');
     $update->push(update => rr_del("$rrname TXT"));
     $update->sign_tsig($keyfile);
@@ -246,7 +255,8 @@ sub handle_verification_dns {
         $logger->error("FAILED: Resolver error "
             . $resolver->errorstring . '.');
     }
-    return $results->{valid} ? 1 : undef;
+
+    return 1;
 }
 
 1;
