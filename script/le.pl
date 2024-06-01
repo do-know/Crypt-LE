@@ -13,7 +13,7 @@ use MIME::Base64 'encode_base64url';
 use Crypt::LE ':errors', ':keys';
 use utf8;
 
-my $VERSION = '0.39';
+my $VERSION = '0.40';
 
 exit main();
 
@@ -43,6 +43,8 @@ sub work {
         version => $opt->{'api'}||0,
         debug => $opt->{'debug'},
         logger => $opt->{'logger'},
+        delay => $opt->{'delay'},
+        max_server_delay => $opt->{'max-server-delay'},
     );
 
     # Check if CA is supported if it was specified explicitly.
@@ -93,7 +95,7 @@ sub work {
         # Register.
         my $reg = _register($le, $opt);
         return $reg if $reg;
-        my $rv = $le->revoke_certificate(\$crt);
+        my $rv = $le->revoke_certificate(\$crt, $opt->{'revoke-reason'});
         if ($rv == OK) {
             $opt->{'logger'}->info("Certificate has been revoked.");
         } elsif ($rv == ALREADY_DONE) {
@@ -292,7 +294,7 @@ sub parse_options {
 
     GetOptions ($opt, 'key=s', 'csr=s', 'csr-key=s', 'domains=s', 'path=s', 'crt=s', 'email=s', 'curve=s', 'server=s', 'directory=s', 'api=i', 'config=s', 'renew=i', 'renew-check=s','issue-code=i',
         'handle-with=s', 'handle-as=s', 'handle-params=s', 'complete-with=s', 'complete-params=s', 'log-config=s', 'update-contacts=s', 'export-pfx=s', 'tag-pfx=s',
-        'eab-kid=s', 'eab-hmac-key=s', 'ca=s', 'alternative=i', 'generate-missing', 'generate-only', 'revoke', 'legacy', 'unlink', 'delayed', 'live', 'quiet', 'debug+', 'help') ||
+        'eab-kid=s', 'eab-hmac-key=s', 'ca=s', 'alternative=i', 'generate-missing', 'generate-only', 'delay=i', 'max-server-delay=i', 'revoke', 'revoke-reason=s', 'legacy', 'unlink', 'delayed', 'live', 'quiet', 'debug+', 'help') ||
         return $opt->{'error'}->("Use --help to see the usage examples.", 'PARAMETERS_PARSE');
 
     if ($opt->{'config'}) {
@@ -783,6 +785,8 @@ h) To revoke a certificate:
 
  le.pl --key account.key --crt domain.crt --revoke
 
+ le.pl --key account.key --crt domain.crt --revoke --revoke-reason "Superseded"
+
 i) To update your contact details:
 
  le.pl --key account.key --update-contacts "one@example.com, two@example.com" --live
@@ -889,6 +893,9 @@ EOF
 -generate-only               : Exit after generating the missing files.
 -unlink                      : Remove challenge files automatically.
 -revoke                      : Revoke a certificate.
+-revoke-reason <reason>      : Revocation reason.
+-delay <seconds>             : Delay between attempts to check the challenge results.
+-max-server-delay <seconds>  : Cap server-specified delay (which could be unreasonably long).
 -legacy                      : Legacy mode (shorter keys, separate CA file).
 -delayed                     : Exit after requesting the challenge.
 -live                        : Use the live server instead of the test one.

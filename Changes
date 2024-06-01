@@ -1,5 +1,10 @@
 Revision history for Crypt-LE
 
+0.40    01 June 2024
+        - Revocation reason can now be specified via 'revoke-reason'.
+        - It is now possible to cap unreasonably long server-specified 'retry-after' via 'max-server-delay'.
+        - Sectigo added to the CAs as 'sectigo.com'.
+
 0.39    11 March 2023
         - EAB (External Account Binding) support used by some CAs.
         - Asynchronous order finalization support.

@@ -4,7 +4,7 @@ use 5.006;
 use strict;
 use warnings;
 
-our $VERSION = '0.39';
+our $VERSION = '0.40';
 
 =head1 NAME
 
@@ -12,7 +12,7 @@ Crypt::LE - Let's Encrypt (and other ACME-based) API interfacing module and clie
 
 =head1 VERSION
 
-Version 0.39
+Version 0.40
 
 =head1 SYNOPSIS
 
@@ -166,6 +166,9 @@ our $cas = {
                                 'live'  => 'https://dv.acme-v02.api.pki.goog/directory',
                                 'stage' => 'https://dv.acme-v02.test-api.pki.goog/directory',
                             },
+    'sectigo.com'        => {
+                                'live'  => 'https://acme.sectigo.com/v2/DV',
+                            },
 };
 
 use constant {
@@ -250,6 +253,15 @@ my $compat = {
     revokeCert	=> 'revoke-cert',
 };
 
+# Subset of https://datatracker.ietf.org/doc/html/rfc5280#section-5.3.1 as supported by Boulder.
+my $revocation_reasons = {
+    unspecified          => 0,
+    keycompromise        => 1,
+    affiliationchanged   => 3,
+    superseded           => 4,
+    cessationofoperation => 5,
+};
+
 =head1 METHODS (API Setup)
 
 The following methods are provided for the API setup. Please note that account key setup by default requests the resource directory from Let's Encrypt servers.
@@ -297,8 +309,13 @@ Enables automatic retrieval of the resource directory (required for normal API p
 
 =item C<delay>
 
-Specifies the time in seconds to wait before Let's Encrypt servers are checked for the challenge verification results again. By default set to 2 seconds.
-Non-integer values are supported (so for example you can set it to 1.5 if you like).
+Specifies the time in seconds to wait before the challenge verification results are checked again. By default set to 2 seconds.
+Non-integer values are supported (so for example you can set it to 1.5 if you like). Please note that the server-specified delay overrides this value,
+but it can be adjusted by using max_server_delay (see below).
+
+=item C<max_server_delay>
+
+Overrides server-specified delay in seconds to wait before the challenge verification results are checked again.
 
 =item C<version>
 
@@ -323,20 +340,23 @@ sub new {
     my $class = shift;
     my %params = @_;
     my $self = {
-        ua      => '',
-        server  => '',
-        ca      => '',
-        dir     => '',
-        live    => 0,
-        debug   => 0,
-        autodir => 1,
-        delay   => 2,
-        version => 0,
-        try     => 300,
+        ua                  => '',
+        server              => '',
+        ca                  => '',
+        dir                 => '',
+        live                => 0,
+        debug               => 0,
+        autodir             => 1,
+        delay               => 0,
+        max_server_delay    => 0,
+        version             => 0,
+        try                 => 300,
     };
     foreach my $key (keys %{$self}) {
         $self->{$key} = $params{$key} if (exists $params{$key} and !ref $params{$key});
     }
+    # Some defaults.
+    $self->{delay} ||= 2;
     # Init UA
     $self->{ua} = HTTP::Tiny->new( agent => $self->{ua} || __PACKAGE__ . " v$VERSION", verify_SSL => 1 );
     # Init server
@@ -1371,7 +1391,7 @@ sub request_issuer_certificate {
     return $self->_status(ERROR, $content);
 }
 
-=head2 revoke_certificate($certificate_file|$scalar_ref)
+=head2 revoke_certificate($certificate_file|$scalar_ref, [ $revoke_reason ])
 
 Revokes a certificate.
 
@@ -1380,13 +1400,22 @@ Returns: OK | READ_ERROR | ALREADY_DONE | ERROR.
 =cut
 
 sub revoke_certificate {
-    my $self = shift;
-    my $file = shift;
+    my ($self, $file, $reason) = @_;
     my $crt = $self->_file($file);
     return $self->_status(READ_ERROR, "Certificate reading error.") unless $crt;
-    my ($status, $content) = $self->_request($self->{directory}->{'revoke-cert'},
-                             { resource => 'revoke-cert', certificate => encode_base64url($self->pem2der($crt)) },
-                             { jwk => 0 });
+
+    my $reason_code = 0;
+    my $payload = { resource => 'revoke-cert', certificate => encode_base64url($self->pem2der($crt)) };
+    if ($reason) {
+        $reason_code = $revocation_reasons->{lc $reason};
+        return $self->_status(ERROR, "Unsupported revocation reason specified.") unless defined $reason_code;
+        # Only add the reason field if it is different from Unspecified/0,
+        # since custom CAs might not support the reason (as per rfc8555#section-7.6)
+        $payload->{reason} = $reason_code if $reason_code;
+    }
+
+    my ($status, $content) = $self->_request($self->{directory}->{'revoke-cert'}, $payload, { jwk => 0 });
+
     if ($status == SUCCESS) {
         return $self->_status(OK, "Certificate has been revoked.");
     } elsif ($status == ALREADY_DONE) {
@@ -1863,6 +1892,11 @@ sub _request {
     $self->{location} = $resp->{headers}->{location} ? $resp->{headers}->{location} : undef;
     if ($resp->{headers}->{'retry-after'} and $resp->{headers}->{'retry-after'}=~/^(\d+)$/) {
         $self->{retry} = $1; # Set retry based on the last request where it was present, do not reset.
+        # Some servers might be sending unreasonably long retry-after (such as 86400 seconds - the whole day),
+        # effectively pausing the process - this behaviour can be overriden by 'max_server_delay' option.
+        if ($self->{max_server_delay} and $self->{max_server_delay} < $self->{retry}) {
+            $self->{retry} = $self->{max_server_delay};
+        }
     }
 
     return wantarray ? ($status, $rv) : $rv;
@@ -1875,6 +1909,7 @@ sub _await {
     $opts ||= {};
     my $expected_status = $opts->{status} || SUCCESS;
     ($status, $content) = $self->_request($url, $payload, $opts);
+    $self->_debug("Retry is set to " . ($self->{retry} ? $self->{retry} : '-') . ", and delay is $self->{delay}");
     while ($status == $expected_status and $content and $content->{status} and $content->{status}=~/^(?:pending|processing)$/) {
         select(undef, undef, undef, $self->{retry} || $self->{delay});
         ($status, $content) = $self->_request($url, $payload, $opts);
