@@ -28,6 +28,7 @@ WriteMakefile
                    'Module::Load' => '0.28',
                    'IO::Socket::SSL' => '1.42',
                    'Convert::ASN1' => '0.2',
+		   'Net::DNS' => '1.44',
                    'Test::More' => 0
                  },
   'PL_FILES' => {},
